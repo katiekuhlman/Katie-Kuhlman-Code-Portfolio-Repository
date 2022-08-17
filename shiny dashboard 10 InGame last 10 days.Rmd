@@ -1,0 +1,442 @@
+---
+title: 'DB: InGame 10-Day Comparison'
+output: 
+  flexdashboard::flex_dashboard:
+    vertical_layout: scroll
+    html_document:
+    self_contained: no
+    theme:
+        version: 4
+        bootwatch: simplex
+runtime: shiny
+    
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+## loading in all necessary packages for code to run, they must first be installed...if missing any, run: install.packages(flexdashboard) (or whatever packages are needed) just once. Can then be used anytime by having library() to load it
+
+library(flexdashboard)
+library(ggplot2)
+#library(readxl) 
+library(readr)
+library(dplyr)
+library(knitr)
+library(tinytex)
+library(kableExtra)
+#library(janitor)
+library(stringr)
+#library(forcats)
+library(lubridate)
+#library(gridExtra)
+#library(foreign)
+#library(haven)
+#library(stargazer)
+#library(arsenal)
+#library(performance) # for diagnistics test
+#library(see) # f
+#library(xtable)
+#library(cowplot)
+#library(sjPlot)
+library(shiny)
+library(shinythemes)
+library(tidyr)
+library(DT)
+library(ggforce)
+
+fluidPage(theme = shinytheme("simplex"))
+```
+
+```{r read in data, include = FALSE}
+# loading CSV as an R dataframe -- for this to work, the CSV must be in the same folder as this RMarkdown/RScript and named exactly in the quotation marks, whatever it is called on your computer
+
+ingame_data <- read.csv("aug15elasticdata.csv")
+
+```
+
+```{r mutating column names, include = FALSE}
+# code below manually assigns field names to the missing rows, this relies on the column "FieldID" continually being used and assigning unique ID numbers to different fields and "Field.Name" being used to label field names (at least in the most recent data points) -- if these field/column names change, even a difference in capitals/the period, these will need to be updated here the "FieldID_mut" column will contain new field names, based on the majority field name of the FieldID assigned to each data point
+
+ingame_fields <- ingame_data %>% group_by(FieldID, Field.Name) %>% filter(Field.Name != "-") %>% summarise(count = max(n())) %>% filter(count == max(count))
+
+ingame_data <- ingame_data %>% mutate(
+    FieldID_mut = FieldID
+)
+
+for(i in 1:nrow(ingame_fields)){
+ingame_data <- ingame_data %>% mutate(
+    FieldID_mut = case_when(
+        FieldID_mut == ingame_fields$FieldID[i] ~ ingame_fields$Field.Name[i],
+        FieldID_mut != ingame_fields$FieldID[i] ~ FieldID_mut
+    )
+)
+}
+
+# converts to the proper format (date, numeric) the columns that we care about/look at here, if column names/field names in the ElasticSearch data output (which becomes the input to this script), these will need to be updated -- if UNITS of relevant columns changes, these will also need to be updated
+ingame_data <- ingame_data %>% mutate(
+    Day = substr(X.timestamp, 1, 12), # subsets so that the time is removed, as we only look at the date in this dashboard
+    Day = gsub("@", "", Day), # removes "@" which shows up between the date and time
+    date = as.POSIXct(Day, format = "%b %d, %Y"),
+    # above 3 lines convert date and time stamp to proper R date format (POSIXct) -- for this to work, the timestamp field must be in the format "abbreviated-month day, year" (ex: "Aug 16, 2022")
+    `Pitch Speed (mph)` = as.numeric(Data.PitchParams.TotalSpeed)*2.23694, # for pitch speed in m/s, converts to mph
+    speed = `Pitch Speed (mph)`,
+    spin = gsub(",", "", Data.PitchParams.TotalSpin),
+    `Pitch Total Spin (rpm)` = as.numeric(spin),
+    spin = `Pitch Total Spin (rpm)`,
+    `SZ Side (in)` = as.numeric(Data.PitchParams.StrikeZoneSide)*39.3701, # for SZ side in meters, converts to inches
+    szside = `SZ Side (in)`,
+    `SZ Height (in)` = as.numeric(Data.PitchParams.StrikeZoneHeight)*39.3701, # for SZ height in meters, converts to inches
+    szheight = `SZ Height (in)`
+) %>% drop_na(Day, date, speed, spin, szside, szheight) # drops all NA because every other row gives hit metrics only, leaving about 1/2 of the data with NAs for pitch metrics
+
+```
+
+```{r pulling last ten and thirty days, include = FALSE}
+
+
+ingame_last10 <- ingame_data %>% filter(date %in% head(unique(date[speed != 0 & spin !=0]), 10)) %>% mutate(Range = "Last 10 Days") # pulls all rows from the last 10 days of data which give usable data (speed and spin not 0)
+
+ingame_last30 <- ingame_data %>% filter(date %in% head(unique(date[speed != 0 & spin != 0]), 30)) %>% mutate(Range = "Last 30 Days") # pulls all rows from the last 10 days of data which give usable data (speed and spin not 0)
+
+ingame_10and30 <- bind_rows(ingame_last10, ingame_last30) # combines last 10 and last 30 days of data for comparison 
+
+```
+
+
+Ellipse Plots for Last 10 Days {data-navmenu="Ellipse Plots"}
+==================================
+
+Inputs {.sidebar}
+-------------------------------------------------
+
+```{r axes and location inputs, echo = FALSE}
+# code to generate 3 drop down menus for selecting variables on x and y axes as well as which field to look at data from (including All Field Locations)
+
+    # right now there are only 4 options of metrics to look at (speed, spin, sz side, and sz height) -- more can be added by including the column names (in quotes) in the "choices = " list 
+
+selectInput(
+        "xvar", label = h4("X-Axis Variable:"),
+        choices = c("Pitch Speed (mph)" = "speed", "Pitch Total Spin (rpm)" = "spin", "SZ Side (in)" = "szside", "SZ Height (in)" = "szheight")
+)
+
+selectInput(
+    "yvar", label = h4("Y-Axis Variable:"),
+    choices = c("Pitch Speed (mph)" = "speed", "Pitch Total Spin (rpm)" = "spin", "SZ Side (in)" = "szside", "SZ Height (in)" = "szheight")
+)
+
+selectInput(
+    "fieldname", label = h4("Field Name (ID # if No Name):"),
+    choices = c("All Locations", ingame_data$FieldID_mut)
+)
+
+## code below is for regularly defined "Field.Name" column, uncommented code is for manually filled in field names (Field) based on most common connected to certain field IDs (FieldID column) -- this continues in all code below -- commented sections are from regularly defined "Field.Name" column and uncommented if it uses manually filled "Field" column
+
+# selectInput(
+#     "fieldname", label = h4("Field Name:"),
+#     choices = c("All Locations", ingame_data$Field.Name)
+# )
+
+```
+
+Column {data-width=1000}
+-------------------------------------------------
+
+### Ellipse Plot of Selected Variables at Selected Location for Last 10 Days
+
+```{r ellipse plot options}
+# code for ellipse plot comparing last 10 days of whatever metrics are selected in drop-down (can be shown for all locations or a selected location)
+
+# this method of ellipse creation (which is used throughout this dashboard) creates a 95% confidence ellipse, the smallest ellipse which contains 95% of all samples that can be drawn from the underlying distribution of the data. For information on the documentation/method behind this ellipse plotting, see this link: https://ggplot2.tidyverse.org/reference/stat_ellipse.html 
+
+renderPlot({
+    if (input$fieldname == "All Locations")
+        
+        ingame_ellipse_data <- ingame_last10
+    
+    if (input$fieldname != "All Locations")
+        # filters data to be used in graph if a certain field name/location is chosen
+        ingame_ellipse_data <- ingame_last10 %>% filter(FieldID_mut == input$fieldname & !is.na(FieldID_mut))
+       # ingame_ellipse_data <- ingame_last10 %>% filter(Field.Name == input$fieldname & !is.na(Field.Name))
+    
+    centroids <- reactive({
+        ingame_ellipse_data %>% group_by(Day) %>% summarise(xavg = mean(!!sym(input$xvar), na.rm=T), yavg = mean(!!sym(input$yvar), na.rm = T))
+    })
+    
+
+    ggplot(ingame_ellipse_data, aes_string(x = input$xvar, y = input$yvar), aes(col = Day)) +
+       # geom_mark_ellipse(aes(fill = Day, col = Day), alpha = 0.25) +
+        stat_ellipse(geom = "polygon", aes(fill = Day, col = Day), alpha = 0.25) +
+        geom_point(data = centroids(), aes(x = xavg, y = yavg, col = Day), size = 4, shape = 18, alpha = 0.75) +
+        geom_smooth(data = centroids(), aes(x = xavg, y = yavg), col = "black", method = 'lm', lty=2, formula = y~x) +
+        labs(x = input$xvar, y = input$yvar, title = "Distribution of Chosen Metrics with Centroids Colored by Day, for Last 10 Days, with Linear Regression Through Centroids", color = "Day") #+
+        # xlim(-200, 400) +
+        # ylim(0, 3000)
+    
+})
+
+```
+
+
+Ellipse Plot: Last 10 Days vs. Last 30 Days {data-navmenu="Ellipse Plots"}
+==================================
+
+Inputs {.sidebar}
+-------------------------------------------------
+
+```{r axes and location inputs tenvsthirty, echo = FALSE}
+# code to generate 3 drop down menus for selecting variables on x and y axes as well as which field to look at data from (including All Field Locations) for 1st page and 1st ellipse plot
+
+    # right now there are only 4 options of metrics to look at (speed, spin, sz side, and sz height) -- more can be added by including the column names (in quotes) in the "choices = " list 
+
+selectInput(
+        "xvar2", label = h4("X-Axis Variable:"),
+        choices = c("Pitch Speed (mph)" = "speed", "Pitch Total Spin (rpm)" = "spin", "SZ Side (in)" = "szside", "SZ Height (in)" = "szheight")
+)
+
+selectInput(
+    "yvar2", label = h4("Y-Axis Variable:"),
+    choices = c("Pitch Speed (mph)" = "speed", "Pitch Total Spin (rpm)" = "spin", "SZ Side (in)" = "szside", "SZ Height (in)" = "szheight")
+)
+
+selectInput(
+    "fieldname2", label = h4("Field Name (ID # if No Name:"),
+    choices = c("All Locations", ingame_data$FieldID_mut)
+)
+
+# selectInput(
+#     "fieldname2", label = h4("Field Name:"),
+#     choices = c("All Locations", ingame_data$Field.Name)
+# )
+
+```
+
+
+
+
+Column {data-width=1000}
+-------------------------------------------------
+
+### Ellipse Plot of Selected Variables at Selected Location for Last 10 Days vs. Last 30 Days
+
+```{r ellipse plot options ten vs thirty days}
+# code for generating ellipse plot comparing data for last 10 days against data for last 30 days (including last 10) -- can be done for All Locations or just one field location
+renderPlot({
+    if (input$fieldname2 == "All Locations")
+        
+        ingame_ellipse_data2 <- ingame_10and30
+    
+    if (input$fieldname2 != "All Locations")
+        # filters data to be used in graph if a certain field name/location is chosen
+        ingame_ellipse_data2 <- ingame_10and30 %>% filter(FieldID_mut == input$fieldname2 & !is.na(FieldID_mut))
+
+        #ingame_ellipse_data2 <- ingame_10and30 %>% filter(Field.Name == input$fieldname2 & !is.na(Field.Name))
+    
+    centroids <- reactive({
+        ingame_ellipse_data2 %>% group_by(Range) %>% summarise(xavg = mean(!!sym(input$xvar2), na.rm=T), yavg = mean(!!sym(input$yvar2), na.rm = T))
+    })
+    
+
+    ggplot(ingame_ellipse_data2, aes_string(x = input$xvar2, y = input$yvar2), aes(col = Range)) +
+      #  geom_mark_ellipse(aes(fill = Range, col = Range), alpha = 0.25) +
+        stat_ellipse(geom = "polygon", aes(fill = Range, col = Range), alpha = 0.25) +
+        geom_point(data = centroids(), aes(x = xavg, y = yavg, col = Range), size = 4, shape = 18, alpha = 0.75) +
+        labs(x = input$xvar2, y = input$yvar2, title = "Distribution of Chosen Metrics with Centroids Colored by Day, for Last 10 Days vs. Last 30 Days", color = "Range") #+
+        # xlim(-200, 400) +
+        # ylim(0, 3000)
+    
+})
+
+
+```
+
+Ellipse Plot: All Locations vs. One Location Last 10 Days {data-navmenu="Ellipse Plots"}
+==================================
+
+Inputs {.sidebar}
+-------------------------------------------------
+
+```{r axes and location inputs locvsall, echo = FALSE}
+# code to generate 3 drop down menus for selecting variables on x and y axes as well as which field to look at data from (including All Field Locations) for 3rd page and 3rd ellipse plot
+
+    # right now there are only 4 options of metrics to look at (speed, spin, sz side, and sz height) -- more can be added by including the column names (in quotes) in the "choices = " list 
+
+selectInput(
+        "xvar3", label = h4("X-Axis Variable:"),
+        choices = c("Pitch Speed (mph)" = "speed", "Pitch Total Spin (rpm)" = "spin", "SZ Side (in)" = "szside", "SZ Height (in)" = "szheight")
+)
+
+selectInput(
+    "yvar3", label = h4("Y-Axis Variable:"),
+    choices = c("Pitch Speed (mph)" = "speed", "Pitch Total Spin (rpm)" = "spin", "SZ Side (in)" = "szside", "SZ Height (in)" = "szheight")
+)
+
+selectInput(
+    "fieldname3", label = h4("Field Name (ID # if No Name:"),
+    choices = c("All Locations", ingame_data$FieldID_mut)
+)
+
+# selectInput(
+#     "fieldname3", label = h4("Field Name:"),
+#     choices = c("All Locations", ingame_data$Field.Name)
+# )
+
+```
+
+Column {data-width=1000}
+-------------------------------------------------
+
+### Ellipse Plot of Selected Variables at Selected Location vs. Rest of Locations
+
+```{r ellipse plot options loc vs all}
+# code for creating ellipse plot comparing last 10 days of data in a selected location to last 10 days of data in all other locations
+renderPlot({
+    if (input$fieldname3 == "All Locations")
+        # if no location is selected, just makes one ellipse for All Locations
+        ingame_ellipse_data3 <- ingame_last10 %>% mutate(Location = "All Locations")
+    
+    if (input$fieldname3 != "All Locations")
+        # if a location is selected, adds column labelling selected location and all other locations so there are 2 groups which can be compared
+        ingame_ellipse_data3 <- ingame_last10 %>% mutate(Location = case_when(
+            FieldID_mut == input$fieldname3 ~ input$fieldname3,
+            FieldID_mut != input$fieldname3 ~ "All Other Locations"
+        )
+        )
+        
+        # ingame_ellipse_data3 <- ingame_last10 %>% mutate(Location = case_when(
+        #     Field.Name == input$fieldname3 ~ input$fieldname3,
+        #     Field.Name != input$fieldname3 ~ "All Other Locations"
+        # )
+        # )
+    
+    centroids <- reactive({
+        ingame_ellipse_data3 %>% group_by(Location) %>% summarise(xavg = mean(!!sym(input$xvar3), na.rm=T), yavg = mean(!!sym(input$yvar3), na.rm = T))
+    })
+    
+
+    ggplot(ingame_ellipse_data3, aes_string(x = input$xvar3, y = input$yvar3), aes(col = Location)) +
+      #  geom_mark_ellipse(aes(fill = Range, col = Range), alpha = 0.25) +
+        stat_ellipse(geom = "polygon", aes(fill = Location, col = Location), alpha = 0.25) +
+        geom_point(data = centroids(), aes(x = xavg, y = yavg, col = Location), size = 4, shape = 18, alpha = 0.75) +
+        labs(x = input$xvar3, y = input$yvar3, title = "Distribution of Chosen Metrics with Centroids Colored by Day, for Chosen Field Location vs. Rest of Field Locations", color = "Location") #+
+        # xlim(-200, 400) +
+        # ylim(0, 3000)
+    
+})
+
+
+```
+
+
+
+
+
+Summary Statistics Table: Last 10 Days {data-navmenu="Summary Stats Tables"}
+==================================
+
+Column {data-width=1000}
+-------------------------------------------------
+
+### Summary Stats: Speed and Spin for Last 10 Days
+
+```{r speed spin summary stats last ten days}
+# summary statistics table (avg, standard deviation, and defect info) for speed and spin, separated by day for the last 10 days
+renderTable({
+ingame_last10 %>% group_by("Date" = as.factor(date)) %>% summarise(
+    "Avg Speed (mph)" = mean(speed, na.rm=T), "SD Speed" = sd(speed, na.rm=T), "Speed Defects" = sum(speed == 0), "Speed Defect Chances" = n(), "Speed Defect %" = 100*sum(speed == 0)/n(), "Avg Spin (rpm)" = mean(spin, na.rm = T), "SD Spin" = sd(spin, na.rm =T), "Spin Defects" = sum(spin == 0), "Spin Defect Chances" = n(), "Spin Defect %" = 100*sum(spin == 0)/n()
+)
+})
+
+
+```
+
+### Summary Stats: Strike Zone Height and Side for Last 10 Days
+
+```{r szloc summary stats last ten days}
+# summary statistics table (avg, standard deviation, and defect info) for sz side and sz height, separated by day for the last 10 days
+renderTable({
+    ingame_last10 %>% group_by("Date" = as.factor(date)) %>% summarise(
+        "Avg SZ Height (in)" = mean(szheight, na.rm = T), "SD SZ Height" = sd(szheight, na.rm = T), "SZ Height Defects" = sum(szheight == 0), "SZ Height Defect Chances" = n(), "SZ Height Defect %" = 100*sum(szheight == 0)/n(), "Avg SZ Side (in)" = mean(szside, na.rm = T), "SD SZ Szide" = sd(szside, na.rm = T), "SZ Side Defects" = sum(szside == 0), "SZ Side Defect Chances" = n(), "SZ Side Defect %" = 100*sum(szside == 0)/n()
+    )
+})
+
+
+```
+
+Summary Statistics Table: Last 10 Days vs. Last 30 Days {data-navmenu="Summary Stats Tables"}
+==================================
+
+Column {data-width=1000}
+-------------------------------------------------
+
+### Summary Stats: Speed and Spin for Last 10 Days vs. Last 30 Days
+
+```{r speed spin summary stats last ten days vs thirty}
+# summary statistics table comparing last 10 days to last 30 days (avg, sd, and defects) for speed and spin
+renderTable({
+ingame_10and30 %>% group_by(Range) %>% summarise(
+    "Avg Speed (mph)" = mean(speed, na.rm=T), "SD Speed" = sd(speed, na.rm=T), "Speed Defects" = sum(speed == 0), "Speed Defect Chances" = n(), "Speed Defect %" = 100*sum(speed == 0)/n(), "Avg Spin (rpm)" = mean(spin, na.rm = T), "SD Spin" = sd(spin, na.rm =T), "Spin Defects" = sum(spin == 0), "Spin Defect Chances" = n(), "Spin Defect %" = 100*sum(spin == 0)/n()
+)
+})
+
+
+```
+
+
+
+### Summary Stats: Strike Zone Height and Side for Last 10 Days vs. Last 30 Days
+
+```{r szloc summary stats last ten days vs thirty}
+# summary statistics table comparing last 10 days to last 30 days (avg, sd, and defects) for sz side and sz height
+
+renderTable({
+    ingame_10and30 %>% group_by(Range) %>% summarise(
+        "Avg SZ Height (in)" = mean(szheight, na.rm = T), "SD SZ Height" = sd(szheight, na.rm = T), "SZ Height Defects" = sum(szheight == 0), "SZ Height Defect Chances" = n(), "SZ Height Defect %" = 100*sum(szheight == 0)/n(), "Avg SZ Side (in)" = mean(szside, na.rm = T), "SD SZ Szide" = sd(szside, na.rm = T), "SZ Side Defects" = sum(szside == 0), "SZ Side Defect Chances" = n(), "SZ Side Defect %" = 100*sum(szside == 0)/n()
+    )
+})
+
+
+```
+
+Summary Statistics Table: Last 30 Days {data-navmenu="Summary Stats Tables"}
+==================================
+
+Column {data-width=1000}
+-------------------------------------------------
+
+### Summary Stats: Speed and Spin for Last 30 Days
+
+```{r speed spin summary stats last thirty days}
+# summary statistics table (avg, standard deviation, and defect info) for speed and spin, separated by day for the last 30 days
+
+renderTable({
+ingame_last30 %>% group_by("Date" = as.factor(date)) %>% summarise(
+    "Avg Speed (mph)" = mean(speed, na.rm=T), "SD Speed" = sd(speed, na.rm=T), "Speed Defects" = sum(speed == 0), "Speed Defect Chances" = n(), "Speed Defect %" = 100*sum(speed == 0)/n(), "Avg Spin (rpm)" = mean(spin, na.rm = T), "SD Spin" = sd(spin, na.rm =T), "Spin Defects" = sum(spin == 0), "Spin Defect Chances" = n(), "Spin Defect %" = 100*sum(spin == 0)/n()
+)
+})
+
+
+```
+
+### Summary Stats: Strike Zone Height and Side for Last 30 Days
+
+```{r szloc summary stats last thirty days}
+# summary statistics table (avg, standard deviation, and defect info) for sz side and sz height, separated by day for the last 30 days
+
+renderTable({
+    ingame_last30 %>% group_by("Date" = as.factor(date)) %>% summarise(
+        "Avg SZ Height (in)" = mean(szheight, na.rm = T), "SD SZ Height" = sd(szheight, na.rm = T), "SZ Height Defects" = sum(szheight == 0), "SZ Height Defect Chances" = n(), "SZ Height Defect %" = 100*sum(szheight == 0)/n(), "Avg SZ Side (in)" = mean(szside, na.rm = T), "SD SZ Szide" = sd(szside, na.rm = T), "SZ Side Defects" = sum(szside == 0), "SZ Side Defect Chances" = n(), "SZ Side Defect %" = 100*sum(szside == 0)/n()
+    )
+})
+
+
+```
+
+
+
+
+
+
+
+
+

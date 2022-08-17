@@ -1,0 +1,408 @@
+---
+title: "Report 4: Add Health"
+author: "Kezia Dickson and Katie Kuhlman"
+output: 
+  pdf_document
+    
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+library(dplyr)
+library(knitr)
+library(tinytex)
+library(ggplot2)
+library(kableExtra)
+library(janitor)
+library(stringr)
+library(forcats)
+library(lubridate)
+library(gridExtra)
+library(foreign)
+library(haven)
+library(stargazer)
+library(arsenal)
+library(performance) # for diagnistics test
+library(see) # for diagnistics test
+library(qqplotr) # for diagnistics test
+library(sjPlot)
+library(xtable)
+library(interactions)
+library(ggeffects)
+library(scales)
+library(MatchIt)
+library(CBPS)
+library(MASS)
+library(janitor)
+suppressMessages(library(stargazer))
+suppressMessages(library(tidyverse))
+library(naniar)
+library(cowplot)
+library(Amelia)
+library(dataReporter)
+library(effects)
+
+# fix randomization to get same results each time
+set.seed(1234567)
+```
+
+
+```{r load_data, include = FALSE}
+# verbose = TRUE tells us which the names of the data objects loaded
+load("ICPSR_21600/DS0001/21600-0001-Data.rda", verbose = TRUE)  
+
+# assign data to shorter named file
+ah1 <- da21600.0001 
+
+dim(ah1)
+names(ah1)[1:10]
+```
+
+```{r renaming and scrubbing data, include = FALSE}
+ah1.edit <- ah1 %>%
+  mutate(
+    female = BIO_SEX == "(2) (2) Female",
+    income = PA55,
+    white = H1GI6A == "(1) (1) Marked",
+    black = H1GI6B == "(1) (1) Marked",
+    hispanic = H1GI4 == "(1) (1) Yes",
+    weapon_school = case_when(
+      H1JO25 == '(0) (0) No' ~ 0,
+      H1JO25 == '(1) (1) Yes' ~ 1,
+      TRUE ~ as.numeric(NA)),
+    isolation = case_when(
+      H1ED20 == '(4) (4) Disagree' | H1ED20 == '(5) (5) Strongly disagree' ~ 1,
+      H1ED20 == '(1) (1) Strongly agree' | H1ED20 == '(2) (2) Agree' | H1ED20 == '(3) (3) Neither agree nor disagree'~0),
+    close_mom = case_when(
+      H1WP9 == '(3) (3) Somewhat' | H1WP9 == '(4) (4) Quite a bit' | H1WP9 == '(5) (5) Very much' ~ 1, 
+      TRUE~0),
+    close_dad = case_when(
+      H1WP13 == '(3) (3) Somewhat' | H1WP13 == '(4) (4) Quite a bit' | H1WP13 == '(5) (5) Very much'~1,
+      TRUE~0),
+    teachers_care = case_when(
+     H1PR2 == '(1) (1) Not at all' | H1PR2 == '(2) (2) Very little' ~0,
+     H1PR2 == '(3) (3) Somewhat' | H1PR2 == '(4) (4) Quite a bit' | H1PR2 == '(5) (5) Very much'~1,
+     TRUE ~ as.numeric(NA))
+  )
+ 
+ah1.subset <- ah1.edit %>% 
+  dplyr::select(female, income, close_mom, close_dad, white, black, hispanic, teachers_care, weapon_school, isolation) %>%
+  clean_names()
+
+ah1.subset <- ah1.subset %>%
+  mutate(
+    weapon_school = as.factor(weapon_school),
+    isolation = as.factor(isolation),
+    income = as.numeric(income),
+    female = as.logical(female),
+    close_mom = as.factor(close_mom),
+    close_dad = as.factor(close_dad),
+    white = as.logical(white),
+    black = as.logical(black),
+    hispanic = as.logical(hispanic),
+    teachers_care = as.factor(teachers_care)
+  )
+dim(ah1.subset)
+
+naniar::gg_miss_var(ah1.subset)
+
+```
+
+```{r imputation, include = FALSE}
+ah1.subset <- data.frame(ah1.subset)
+
+match(c("income", "isolation", "teachers_care", "weapon_school"), names(ah1.subset))
+
+bounds_matrix <- matrix(
+  ncol = 3,
+  byrow = TRUE,
+  data = c(2, 0, 999,
+           10, 0, 1,
+           8, 0, 1,
+           9, 0, 1)
+)
+
+ah1.imputed <- amelia(
+  x = ah1.subset,
+  m = 1,
+  bounds = bounds_matrix,
+  noms = c("isolation", "teachers_care", "weapon_school", "close_mom", "close_dad")
+)
+
+ah1.final <- ah1.imputed$imputations$imp1
+
+naniar::gg_miss_var(ah1.final)
+
+```
+
+```{r, include = FALSE}
+library(CBPS)
+library(cobalt)
+
+cbps_out <- CBPS(
+formula = isolation ~ white + teachers_care + income + hispanic + female + close_mom + close_dad + black, 
+data = ah1.final
+)
+
+ah1.final$cbps_weights <- cbps_out$weights
+ 
+# saving dataset
+saveRDS(object = ah1.final, file = "ah1_finaldata.Rdata")
+
+ # making codebook of data
+#dataReporter::makeCodebook(ah1.final, vol = 1)
+  # codebook made
+
+
+```
+
+
+
+
+## Introduction
+
+Does bullying determine whether or not kids decide to bring a weapon to school? Scholars have debated these issues and have offered different explanations for what drives individuals to bring a weapon to school. Scholars Tammy B. Pham, Lana E. Shapiro, Majnu John, and Andrew Adesman offer evidence in support of the claim that victims of bullying are more likely to bring a weapon to school when they experience at least one risk factor. On the other hand, Julia Lurie argues that while there may be a correlation between victims of bullying and the carrying of a weapon in school, there is no causation between the two. Using data from the Add Health Study, we used a logistic regression with controls for demographic variables, closeness to mom, closeness to dad,  parental income, and how much a student feels teachers care about them to test Pham, Shapiro, John, and Adesman’s theory that victims of bullying are more likely to bring a weapon to school. We use the survey question, “do you feel that you are a part of your school?” as a proxy for bullying since individuals who are victims of bullying are more likely to feel isolated from the school community. We find evidence consistent with the hypothesis that isolation, and thus bullying, is statistically significantly associated with, and can help predict, an individual’s decision to bring a weapon to school.
+
+
+
+
+## Theory
+
+Scholars have offered different explanations as to why students may make the decision to bring a weapon to school. University Professor Ron Avi Astor, working with Kathrine Sullivan and others, proposes that children with one or both parents in the military are at a greater risk for being bullied and engaging in violent and self-destructive behaviors. This theory suggests that having military parents is a predictor of bringing a weapon to school. On the other hand, scholars Tammy B. Pham, Lana E. Shapiro, Majnu John, and Andrew Adesman propose that those students reported to be victims of bullying are more likely to carry weapons if they experienced more “risk factors.” These risk factors include feeling unsafe at school, having property damaged or stolen, having been in a fight in the past year, or having been threatened or injured by a weapon. However, Julia Lurie argues that we should be cautious of theories that suggest bullying causes students to carry weapons. This is due to the unclarity of students who identified as being victims of bullying being bullies themselves. Thus, she suggests that there may be a correlation between victims of bullying and carrying weapons, there is no causation.
+
+## Data
+
+```{r, results = 'asis', echo = FALSE}
+
+ah1.final <- ah1.final %>%
+  mutate(
+    weapon_school_char = case_when(
+      weapon_school == 0~"Not Brought Weapon to School",
+      weapon_school == 1~"Has Brought Weapon to School"
+    ),
+    isolation_char = case_when(
+      isolation == 0~"No",
+      isolation == 1~"Yes"
+    ),
+    teachers_care_char = case_when(
+      teachers_care == 0~"No",
+      teachers_care == 1~"Yes"
+    ),
+    female_char = case_when(
+      female == 0~"No",
+      female == 1~"Yes"
+    )
+  )
+var.names <- list(
+  isolation_char = "Feels Isolated",
+  income = "Family Income",
+  teachers_care_char = "Feels Teachers Care",
+  weapon_school_char = "Brought a Weapon to School"
+)
+
+sum.stats.1 <- arsenal::tableby(weapon_school_char~isolation_char + income + teachers_care_char,
+                                data = ah1.final,
+                                numeric.stats = c("N", "mean", "sd", "median", "q1q3"),
+                                #weights = cbps_weights,
+                                test = FALSE) %>%
+  summary(labelTranslations = var.names, title = "Brief Summary Statistics")
+
+sum.stats.1
+
+
+
+```
+
+Our data comes from the National Longitudinal Study of Adolescent to Adult Health (Add Health), which was taken from 1994-2008. This study surveyed a representative, random sample of American adolescents that were in 7th-12th grades in the year 1994-95. It then followed these students into adulthood. We look specifically at the Wave I dataset, which was collected in 1994-95 via an in-school questionnaire and in-home interview. The Add Health survey does not ask students about bullying, specifically. Therefore, our main explanatory variable is the response to the question “(agree or disagree) do you feel like you are a part of your school?”, which we use to estimate whether or not students have been bullied, assuming that bullied students are more likely to feel isolated from their school community. We believe that victims of bullying often feel like outcasts. The act of bullying can result in feelings of anger and sadness towards the community in which they are a part of. We believe such feeling would result in them feeling excluded from the school community. We dichotomized all responses into a treatment or control group to estimate felt isolation at school: those that agreed to feeling a part of their school were part of the “no isolation” control group and those who disagreed, not feeling a part of their school, were in the “isolation” treatment group. Our outcome variable was the student's response to “have you ever carried a weapon to school?” We included controls for: self-reported closeness to mother and father figures, binary gender (female), race (white, black, or hispanic), how much students feel teachers care about them, and parental income. Our data suffered from missingness, so we used the amelia package in R to impute for missingness in income, isolation, teacher care, and weapon school. Figures in the appendix show this missingness before and after imputation. Given the potential for imbalance between the treatment and control groups of our explanatory variable, we utilized covariate balance propensity score (CBPS) matching to re-weight our groups based on imbalance in the aforementioned control variables. Table 6 and the Covariate Balance figure in the appendix show how this method reasonably balanced our data to approximate random assignment of our isolation treatment along our included controls. Table 1 and Table 5 in the appendix show our summary statistics post imputation and matching. We have a total of 6504 respondents, 606 of whom have brought a weapon to school and 5895 have not. 5704 reported not feeling isolated at school, while 800 reported they did. It appears as though a higher percentage of those who brought a weapon to school reported feeling isolated (21.6%) than those who did not bring a weapon to school (11.3%). An attached codebook will explain the data names we used in our code.
+
+## Methods
+
+We use a binary logistic regression model to evaluate the relationship between isolation and bringing weapons to school on our imputed, matched data. This technique is used on data with binary responses, which we have as the yes/no question of bringing a weapon to school. In addition, our data fit the assumptions of logistic regression: independent observations, little/no multicollinearity, a large sample size, and no influential outlier observations. Tests for these can be found in the Appendix. We run 3 models using logistic regression: simple, medium, and full, with varying numbers of controls used. We also run ANOVA tests to evaluate which of these models maximizes simplicity and explanatory power. Our ANOVA tables, Tables 3 & 4, can be found in the Appendix. Based on ANOVA, we prefer our full model because it provides significantly more explanatory power than medium, which is significantly more than simple(P-values about 0.00 each). The equation for our full model is:
+
+```{r, include = FALSE}
+ # running three regression models
+simple.model <- glm(weapon_school~isolation_char, data = ah1.final, family = "quasibinomial", weights = cbps_weights)
+
+medium.model <- glm(weapon_school~isolation_char + female_char + black + white + hispanic, data = ah1.final, family = "quasibinomial", weights = cbps_weights)
+
+full.model <- glm(weapon_school~isolation_char + female_char + black + white + hispanic + teachers_care + close_mom + close_dad, data = ah1.final, family = "quasibinomial", weights = cbps_weights)
+```
+
+```{r, include = FALSE}
+ # using ANOVA to compare our models
+
+anova_svsm <- anova(simple.model, medium.model, test = "Chisq")
+anova_mvsf <- anova(medium.model, full.model, test = "Chisq")
+```
+
+
+$$
+\scriptstyle
+logit(\pi) = -1.15 + 0.48X_{isolation} - 1.21X_{female} + 0.51X_{black} +0.11X_{white} +0.30X_{hispanic} - 0.72X_{teach.care} - 0.19X_{close.mom} - 0.20X_{close.dad} + \epsilon
+$$
+
+## Results
+
+Our three models show a consistent association between felt isolation at school and probability of bringing a weapon to school. Table 2 shows the outcomes of each regression in log odds. In our primary model, which was our full model, we exponentiated our coefficient to evaluate this association. Exponentiating 0.480 tells us that going from our control to our treatment group, from not feeling isolated to feeling isolated, is associated with the odds of a respondent bringing a weapon to school to increase by a multiplicative factor of 1.61, holding all other variables constant. All of these associations are statistically significant, each with a p-value < 0.01, represented by the three stars on our table. These observed relationships can be further viewed in our two figures. The first shows how those that feel isolated, on average, are more likely to bring a weapon to school, with the non-overlapping error bars indicating the statistical significance of this relationship. Our second figure also shows this, with an included control for gender. We can see how those who feel isolated are still more likely to bring a weapon to school. This effect appears more pronounced for boys than girls, and these relationships are all statistically significant, as no error bars overlap in our second ficute. Given the low p-values, we can reject the null hypothesis that there is no relationship between felt isolation and bringing a weapon to school. Our matching attempts to estimate random assignment to treatment conditions in order to allow us to make a potential causal claim with the important note that there could always be confounding variables which we miss with matching. Given that our observed association is statistically significant, we can tentatively claim that isolation was causing the increase in likelihood of students bringing weapons to school. The use of random sampling by the survey allows us to apply our findings to the larger population of American adolescents, as well.
+
+
+```{r, results = 'asis', echo = FALSE}
+glm.table <- stargazer(simple.model, medium.model, full.model, header = FALSE, type = "latex", single.row=TRUE, no.space=TRUE, font.size="small", title = "Probability of Bringing a Weapon to School by Felt Isolation", column.labels = c("Model 1", "Model 2", "Model 3"), omit.stat=c("f", "ser"), covariate.labels = c("Isolation", "Female", "Black", "White", "Hispanic", "Feels Teachers Care", "Close to Mom", "Close to Dad"), dep.var.labels = "Bring Weapon to School")
+
+```
+```{r, results = 'asis', echo = FALSE, out.width="50%"}
+plot_model(full.model, type = "eff",
+           terms = c("isolation_char"),
+           show.data = FALSE) + 
+  ggtitle("Predicted Prob of Bringing Weapon to School by Isolation in Full Model") +
+  theme(plot.title = element_text(size = 12)) +
+  labs(x = "Treatment: Feels Isolated", y = "Probability of Bringing a Weapon to School")
+
+plot_model(full.model, type = "eff",
+           terms = c("isolation_char", "female_char"),
+           show.data = FALSE) + 
+  ggtitle("Predicted Prob of Bringing Weapon to School by Isolation and Gender in Full Model") +
+  theme(plot.title = element_text(size = 10)) +
+  labs(x = "Treatment: Feels Isolated", y = "Probability of Bringing a Weapon to School", color = "Female")
+```
+```{r, results = 'asis', echo = FALSE, out.width= "70%", include = FALSE}
+plot_model(full.model, type = "eff",
+           terms = c("isolation_char", "female_char"),
+           show.data = FALSE) + 
+  ggtitle("Predicted Prob of Bringing Weapon to School by Isolation and Gender in Full Model") +
+  theme(plot.title = element_text(size = 10)) +
+  labs(x = "Treatment: Feels Isolated", y = "Probability of Bringing a Weapon to School", color = "Female")
+
+```
+
+```{r, include = FALSE}
+ # exponentiating our coefficient to get the odds results 
+exp(0.480)
+ # gives us 1.57
+```
+
+## Discussion
+
+Our biggest limitation is using the question “do you feel that you are a part of your school?” as a proxy for bullying. It is possible that an individual could not feel part of their school community, but they are not a victim of bullying. Therefore, if we were able to randomly sample students and ask them if they are victims of bullying within their school community it would serve as a stronger measure for determining if a student would bring a weapon to school. Furthermore, another limitation is that we had to address missingness in the data by imputation. There was a lot of missigness for the variables income, isolation, teachers care, and weapons school. Therefore, it is possible that such imputation could have altered our outcome. When grouping individual responses, those in the neither agree or disagree category and somewhat category were always grouped in the agree category. One can make the argument to group these individuals in the disagree category which could have effects on the outcome that we see. This study is limited by its focus on American individuals, leading to limited external validity, and therefore we cannot apply the results of this study to other countries. In the case of this study, we are unable to randomly assign individuals to different treatments; therefore, we cannot make a true causal inference, just an assumed one given our matching. However, there is always a chance we missed a confounder in our matching, so this causal inference is tentative at best. One extension of this study would be to look past the decision of bringing a weapon to school and look more closely at the relationship between gender and acts of violence in school. When we conducted the study, our findings showed that men were more likely to bring a weapon to school. An extension of our study would benefit from diving into what factors explain acts of violence in school and whether or not there any significant differences between genders in the factors that motivate acts of violence.
+
+
+## Conclusion
+
+Our results provide evidence most in support of Pham’s argument that victims of bullying are more likely to bring weapons to school. We found a slightly positive association between feeling isolated at school, as a proxy for being bullied, and bringing a weapon to school, and this relationship was statistically significant when we matched on several potential confounders to attempt an approximation of random assignment. Therefore, we see students who feel more isolated from their school community bringing weapons to school at a higher rate, and we can make a tentative causal claim, acknowledging that we may be suffering from omitted variable bias if we failed to match on every confounder. This study is important because, particularly for our generation, the question of what leads children to bring weapons to school is one which could literally be the difference between life and death for certain young people.  Understanding the reason behind the decision to bring a weapon, can illuminate for us why students may even choose to act violently in school. Every year, mass shootings at schools shock the United States as the question which we aim to address is brought up time and time again: why do students choose to bring weapons to school? We, alone, cannot come to the very complex answer to this question, however our findings contribute to the scholarly literature which already exists attempting to answer this question as well.
+
+
+
+\newpage
+
+## Appendix
+
+Diagnostics Tests
+```{r, echo = FALSE, out.width="70%"}
+ # diagnostics test
+performance::check_model(full.model)
+```
+Vif Table
+```{r, echo = FALSE}
+library(car)
+car::vif(full.model)
+```
+
+Anova Tables
+```{r, results = 'asis', echo = FALSE}
+ # table comparing simple and medium model
+anova_svsm %>%
+  xtable(caption = "ANOVA of Simple vs. Medium Model") %>%
+  print(type = "latex",
+        comment = FALSE)
+
+ # table comparing medium and full model
+anova_mvsf %>%
+  xtable(caption = "ANOVA of Medium vs. Full Model") %>%
+  print(type = "latex",
+        comment = FALSE)
+```
+
+
+```{r missingness plots, echo = FALSE}
+naniar::gg_miss_var(ah1.subset) + ggtitle("Missingness of Unimputed Data")
+
+naniar::gg_miss_var(ah1.final) + ggtitle("Missingness of Imputed Data")
+```
+
+```{r full summary stats table, results = 'asis', echo = FALSE}
+sum.stats.2 <- arsenal::tableby(weapon_school_char~isolation_char + income + teachers_care_char + white + hispanic + female + close_mom + close_dad + black,
+                                data = ah1.final,
+                                numeric.stats = c("N", "mean", "sd", "median", "q1q3"),
+                                #weights = cbps_weights,
+                                test = FALSE) %>%
+  summary(labelTranslations = var.names, title = "Full Summary Statistics")
+
+sum.stats.2
+
+```
+Balance Tests
+```{r, echo = FALSE}
+love.plot(cbps_out)
+```
+
+```{r, echo = FALSE}
+balance.table <- data.frame(balance(cbps_out))
+balance.table %>% 
+  mutate_if(is.numeric, round, digits = 2) %>%
+  kable(caption = "Balance of Each Varaible using CBPS") %>%
+  kable_styling(
+    full_width = FALSE,
+    latex_options = "scale_down"
+  )
+```
+
+*This research uses data from Add Health, a program project designed by J. Richard Udry, Peter S. Bearman, and Kathleen Mullan Harris, and funded by a grant P01-HD31921 from the Eunice Kennedy Shriver National Institute of Child Health and Human Development, with cooperative funding from 17 other agencies. Special acknowledgment is due Ronald R. Rindfuss and Barbara Entwisle for assistance in the original design. Persons interested in obtaining Data Files from Add Health should contact Add Health, The University of North Carolina at Chapel Hill, Carolina Population Center, Carolina Square, Suite 210, 123 W. Franklin Street, Chapel Hill, NC 27516 (addhealth_contracts@unc.edu). No direct support was received from grant P01-HD31921 for this analysis.*
+
+```{r, include = FALSE}
+ # code for creating citation of package(s) in R
+citation(package = "CBPS")
+
+citation(package = "Amelia")
+
+```
+
+
+\newpage
+
+\begin{thebibliography}{wholeads}
+
+\bibitem{CBPS package}
+Fong, Christian, Marc Ratkovic, and Kosuke Imai (2021). CBPS:
+Covariate Balancing Propensity Score. R package version 0.22.
+https://CRAN.R-project.org/package=CBPS
+
+\bibitem{data set}
+Harris, Kathleen Mullan, and Udry, J. Richard. National Longitudinal Study of Adolescent to Adult Health (Add Health), 1994-2008 [Public Use]. Carolina Population Center, University of North Carolina-Chapel Hill [distributor], Inter-university Consortium for Political and Social Research [distributor], 2018-08-06. https://doi.org/10.3886/ICPSR21600.v21
+
+\bibitem{Amelia package}
+Honaker, James, Gary King, and Matthew Blackwell (2011).
+Amelia II: A Program for Missing Data. Journal of
+Statistical Software, 45(7), 1-47. URL
+http://www.jstatsoft.org/v45/i07/.
+
+\bibitem{Lurie source}
+Lurie, Julia. “A Shocking Number of Teens Bring Weapons to School. Here's One Reason Why.” Mother Jones, May 5, 2014. https://www.motherjones.com/politics/2014/05/bullying-victims-carry-weapons-guns/. 
+
+\bibitem{Pham source}
+Pham, Tammy B., Lana E. Schapiro, Majnu John, and Andrew Adesman. "Weapon carrying among victims of bullying." Pediatrics 140, no. 6 (2017).
+  
+\bibitem{Sullivan source}
+Sullivan, Kathrine, Gordon Capp, Tamika D. Gilreath, Rami Benbenishty, Ilan Roziner, and Ron Avi Astor. "Substance abuse and other adverse outcomes for military-connected youth in California: results from a large-scale normative population survey." JAMA pediatrics 169, no. 10 (2015): 922-928. 
+
+\end{thebibliography}
+
+Honor Code:
+We pledge our honor that we completed this assignment in accordance with University regulations
+
+Kezia Dickson, Katie Kuhlman
+

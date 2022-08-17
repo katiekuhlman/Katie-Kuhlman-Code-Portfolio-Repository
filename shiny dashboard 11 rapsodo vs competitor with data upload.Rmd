@@ -1,0 +1,2515 @@
+---
+title: 'DB: Rapsodo InGame/3.0 vs. Competitor w/ Data Upload'
+output: 
+  flexdashboard::flex_dashboard:
+    vertical_layout: scroll
+    html_document:
+    self_contained: no
+    theme:
+        version: 4
+        bootwatch: simplex
+runtime: shiny
+    
+---
+
+```{r load packages, include=FALSE}
+## loading in all necessary packages for code to run, they must first be installed...if missing any, run: install.packages(flexdashboard) (or whatever packages are needed) just once. Can then be used anytime by having library() to load it
+
+library(flexdashboard)
+library(ggplot2)
+library(readr)
+library(dplyr)
+library(knitr)
+library(tinytex)
+library(kableExtra)
+library(stringr)
+library(lubridate)
+library(shiny)
+library(shinythemes)
+library(tidyr)
+library(DT)
+library(gt)
+
+fluidPage(theme = shinytheme("simplex"))
+```
+
+Data Upload
+==================================
+
+
+```{r upload csv to flexdashboard attempt, include = FALSE}
+# tells dashboard that dataset, once loaded in, will be stored under the name "comp_data"
+
+comp_data <- eventReactive(input$file1, {
+    comp_data <- read.csv(input$file1$datapath)
+})
+```
+
+```{r file upload}
+# code for file upload section, accepts any types of CSV files and they are labeled within the code as "file1"
+
+fileInput("file1", "Choose CSV File",
+          multiple = TRUE,
+          accept = c("text/csv",
+                     "text/comma-separated-values, text/plain",
+                     ".csv"))
+```
+
+```{r table test}
+# prints datatable of uploaded csv to ensure code has been properly uploaded
+
+renderTable({
+    comp_data <- comp_data()
+    comp_data
+})
+```
+
+```{r mutating data}
+# this chunk adds column names consistent regardless of which competitor csv is uploaded, also removes final 6 rows from CSV, which are the rows that contain summary statistics calculated in the CSV, and makes all important columns numeric (they read in as character columns)
+
+### IMPORTANT: IF ANY COLUMN NAMES ARE CHANGED IN THE CSVs COMING FROM ALEX'S MERGER DASHBOARD, THEY WILL NEED TO BE UPDATED HERE
+
+comp_data_nosummary <- reactive({ # has to all be wrapped in a reactive function because of csv upload
+comp_data <- comp_data() # csv upload means data itself is reactive, must be called like this
+comp_data_nosummary <- head(comp_data, -6) # removes bottom 6 rows from CSV (summary stat rows - if more are added/taken away, this may need to be changed)
+
+if ("TM.UTCDateTime" %in% colnames(comp_data_nosummary)) { # for CSVs with TrackMan Stadium as the competitor device (identified because timestamp is labeled "TM.UTCDateTime") -- IF TIMESTAMP LABEL CHANGES, NEED TO UPDATE THIS
+    comp_data_nosummary <- comp_data_nosummary %>% mutate(
+    Comp.PitchTimeStamp = substr(TM.UTCDateTime, 1, 19),
+    # this line subsets the competitor (trackman stadium) datetime stamp to ONLY include the first 19 characters which contain the date and time information -- if the format of the data in this column changes, this will need to be adjusted
+    Comp.PitchTimeStamp = as.POSIXct(Comp.PitchTimeStamp, format = "%Y-%m-%d%H:%M:%S"),
+    Rap.PitchTimeStamp = as.POSIXct(Rap.UTCPitchTimeStamp, format = "%Y-%m-%d%H:%M:%S"),
+    # the above 3 lines of code convert both time stamp columns to R's datetime format, POSIXct, in order to do this, they must be in the format "year-month-day hour:minute:second" (this link provides a tutorial on how to do this: https://www.tutorialkart.com/r-tutorial/r-convert-string-to-datetime/) -- if the format of the data in these columns changes, these will need to be adjusted
+    Comp.RelSpeed = as.numeric(TM.RelSpeed),
+    Rap.TotalSpeedmph = as.numeric(Rap.TotalSpeed..mph.),
+    Speed.Delta = as.numeric(Speed.Delta),
+    Comp.SpinRate = as.numeric(TM.SpinRate),
+    Rap.TotalSpin = as.numeric(Rap.TotalSpin),
+    Spin.Delta = as.numeric(Spin.Delta),
+    Comp.InducedVertBreak = as.numeric(TM.InducedVertBreak),
+    Rap.VertBreakTrajectory = as.numeric(Rap.VertBreakTrajectory),
+    VB.Delta = as.numeric(VB.Delta),
+    Comp.HorzBreak = as.numeric(TM.HorzBreak),
+    Rap.HorzBreakTrajectory = as.numeric(Rap.HorzBreakTrajectory),
+    HB.Delta = as.numeric(HB.Delta),
+    Comp.SZSide = as.numeric(TM.SZone.Side),
+    Rap.SZSide = as.numeric(Rap.SZone.Side),
+    SZoneX.Delta = as.numeric(SZoneX.Delta),
+    Comp.SZHeight = as.numeric(TM.SZone.Height),
+    Rap.SZHeight = as.numeric(Rap.SZone.Height),
+    SZoneY.Delta = as.numeric(SZoneY.Delta),
+    Comp.ExitSpeed = as.numeric(TM.ExitSpeed),
+    Comp.Angle = as.numeric(TM.Angle),
+    Comp.Direction = as.numeric(TM.Direction),
+    Rap.HitVelocity = as.numeric(Rap.HitVelocity),
+    Rap.HitVertAngle = as.numeric(Rap.HitVertAngle),
+    Rap.Direction = as.numeric(Rap.Direction),
+    ExitSpeed.Delta = as.numeric(ExitSpeed.Delta),
+    ExitAngle.Delta = as.numeric(ExitAngle.Delta),
+    ExitDirection.Delta = as.numeric(ExitDirection.Delta),
+    Rap.SpinTilt = as.numeric(gsub(":", ".",Rap.Spin.Tilt)),
+    Comp.SpinTilt = as.numeric(gsub(":", ".", TM.Spin.Tilt)),
+    Comp.SpinX = as.numeric(TM.Spin.X),
+    Rap.SpinX = as.numeric(Rap.Spin.X),
+    SpinX.Delta = as.numeric(Spin.X.Delta),
+    Comp.SpinY = as.numeric(TM.Spin.Y),
+    Rap.SpinY = as.numeric(Rap.Spin.Y),
+    SpinY.Delta = as.numeric(Spin.Y.Delta),
+    Comp.SpinZ = as.numeric(TM.Spin.Z),
+    Rap.SpinZ = as.numeric(Rap.Spin.Z),
+    SpinZ.Delta = as.numeric(Spin.Z.Delta),
+    Comp.RelHeight = as.numeric(TM.ReleaseHeight),
+    Rap.RelHeight = as.numeric(Rap.ReleaseHeight),
+    RelHeight.Delta = as.numeric(ReleaseHeight.Delta),
+    Comp.RelExt = as.numeric(TM.ReleaseExtension),
+    Rap.RelExt = as.numeric(Rap.ReleaseExtension),
+    RelExt.Delta = as.numeric(ReleaseExtension.Delta),
+    Comp.RelSide = as.numeric(TM.ReleaseSide),
+    Rap.RelSide = as.numeric(Rap.ReleaseSide),
+    RelSide.Delta = as.numeric(ReleaseSide.Delta),
+    Comp.x0 = as.numeric(TM.x0),
+    Rap.x0 = as.numeric(Rap.x0),
+    x0.Delta = as.numeric(x0.Delta),
+    Comp.y0 = as.numeric(TM.y0),
+    Rap.y0 = as.numeric(Rap.y0),
+    y0.Delta = as.numeric(y0.Delta),
+    Comp.z0 = as.numeric(TM.z0),
+    Rap.z0 = as.numeric(Rap.z0),
+    z0.Delta = as.numeric(z0.Delta),
+    Comp.vx0 = as.numeric(TM.vx0),
+    Rap.vx0 = as.numeric(Rap.vx0),
+    vx0.Delta = as.numeric(vx0.Delta),
+    Comp.vy0 = as.numeric(TM.vy0),
+    Rap.vy0 = as.numeric(Rap.vy0),
+    vy0.Delta = as.numeric(vy0.Delta),
+    Comp.vz0 = as.numeric(TM.vz0),
+    Rap.vz0 = as.numeric(Rap.vz0),
+    vz0.Delta = as.numeric(vz0.Delta),
+    Comp.ax0 = as.numeric(TM.ax0),
+    Rap.ax0 = as.numeric(Rap.ax0),
+    ax0.Delta = as.numeric(ax0.Delta),
+    Comp.ay0 = as.numeric(TM.ay0),
+    Rap.ay0 = as.numeric(Rap.ay0),
+    ay0.Delta = as.numeric(ay0.Delta),
+    Comp.az0 = as.numeric(TM.az0),
+    Rap.az0 = as.numeric(Rap.az0),
+    az0.Delta = as.numeric(az0.Delta)
+)}
+
+if("TM.Local.DateTime" %in% colnames(comp_data_nosummary)) { # for CSVs with TrackMan Portable as the competitor device (identified because timestamp is labeled "TM.Local.DateTime") -- IF TIMESTAMP LABEL CHANGES, NEED TO UPDATED THIS
+    comp_data_nosummary <- comp_data_nosummary %>% mutate(
+    Comp.PitchTimeStamp = substr(TM.Local.DateTime, 1, 22),
+    # this line subsets the competitor (trackman portable) datetime stamp to ONLY include the first 22 characters which contain the date and time information -- if the format of the data in this column changes, this will need to be adjusted
+    Comp.PitchTimeStamp = as.POSIXct(Comp.PitchTimeStamp, format = "%Y-%m-%d  %H:%M:%S"),
+    Rap.PitchTimeStamp = as.POSIXct(Rap.UTCPitchTimeStamp, format = "%Y-%m-%d%H:%M:%S"),
+    # the above 3 lines of code convert both time stamp columns to R's datetime format, POSIXct, in order to do this, they must be in the format "year-month-day hour:minute:second" (this link provides a tutorial on how to do this: https://www.tutorialkart.com/r-tutorial/r-convert-string-to-datetime/) -- if the format of the data in this column changes, these will need to be adjusted
+    Comp.RelSpeed = as.numeric(TM.RelSpeed),
+    Rap.TotalSpeedmph = as.numeric(Rap.TotalSpeed..mph.),
+    Speed.Delta = as.numeric(Speed.Delta),
+    Comp.SpinRate = as.numeric(TM.SpinRate),
+    Rap.TotalSpin = as.numeric(Rap.TotalSpin),
+    Spin.Delta = as.numeric(Spin.Delta),
+    Comp.InducedVertBreak = as.numeric(TM.InducedVertBreak),
+    Rap.VertBreakTrajectory = as.numeric(Rap.VertBreakTrajectory),
+    VB.Delta = as.numeric(VB.Delta),
+    Comp.HorzBreak = as.numeric(TM.HorzBreak),
+    Rap.HorzBreakTrajectory = as.numeric(Rap.HorzBreakTrajectory),
+    HB.Delta = as.numeric(HB.Delta),
+    Comp.SZSide = as.numeric(TM.SZone.Side),
+    Rap.SZSide = as.numeric(Rap.SZone.Side),
+    SZoneX.Delta = as.numeric(SZoneX.Delta),
+    Comp.SZHeight = as.numeric(TM.SZone.Height),
+    Rap.SZHeight = as.numeric(Rap.SZone.Height),
+    SZoneY.Delta = as.numeric(SZoneY.Delta),
+    Comp.ExitSpeed = as.numeric(TM.ExitSpeed),
+    Comp.Angle = as.numeric(TM.Angle),
+    Comp.Direction = as.numeric(TM.Direction),
+    Rap.HitVelocity = as.numeric(Rap.HitVelocity),
+    Rap.HitVertAngle = as.numeric(Rap.HitVertAngle),
+    Rap.Direction = as.numeric(Rap.Direction),
+    ExitSpeed.Delta = as.numeric(ExitSpeed.Delta),
+    ExitAngle.Delta = as.numeric(ExitAngle.Delta),
+    ExitDirection.Delta = as.numeric(ExitDirection.Delta),
+    Rap.SpinTilt = as.numeric(gsub(":", ".",Rap.Spin.Tilt)),
+    Comp.SpinTilt = as.numeric(gsub(":", ".", TM.Spin.Tilt)),
+    Comp.SpinX = as.numeric(TM.Spin.X),
+    Rap.SpinX = as.numeric(Rap.Spin.X),
+    SpinX.Delta = as.numeric(Spin.X.Delta),
+    Comp.SpinY = as.numeric(TM.Spin.Y),
+    Rap.SpinY = as.numeric(Rap.Spin.Y),
+    SpinY.Delta = as.numeric(Spin.Y.Delta),
+    Comp.SpinZ = as.numeric(TM.Spin.Z),
+    Rap.SpinZ = as.numeric(Rap.Spin.Z),
+    SpinZ.Delta = as.numeric(Spin.Z.Delta),
+    Comp.RelHeight = as.numeric(TM.ReleaseHeight),
+    Rap.RelHeight = as.numeric(Rap.ReleaseHeight),
+    RelHeight.Delta = as.numeric(ReleaseHeight.Delta),
+    Comp.RelExt = as.numeric(TM.ReleaseExtension),
+    Rap.RelExt = as.numeric(Rap.ReleaseExtension),
+    RelExt.Delta = as.numeric(ReleaseExtension.Delta),
+    Comp.RelSide = as.numeric(TM.ReleaseSide),
+    Rap.RelSide = as.numeric(Rap.ReleaseSide),
+    RelSide.Delta = as.numeric(ReleaseSide.Delta),
+    Comp.x0 = as.numeric(TM.x0),
+    Rap.x0 = as.numeric(Rap.x0),
+    x0.Delta = as.numeric(x0.Delta),
+    Comp.y0 = as.numeric(TM.y0),
+    Rap.y0 = as.numeric(Rap.y0),
+    y0.Delta = as.numeric(y0.Delta),
+    Comp.z0 = as.numeric(TM.z0),
+    Rap.z0 = as.numeric(Rap.z0),
+    z0.Delta = as.numeric(z0.Delta),
+    Comp.vx0 = as.numeric(TM.vx0),
+    Rap.vx0 = as.numeric(Rap.vx0),
+    vx0.Delta = as.numeric(vx0.Delta),
+    Comp.vy0 = as.numeric(TM.vy0),
+    Rap.vy0 = as.numeric(Rap.vy0),
+    vy0.Delta = as.numeric(vy0.Delta),
+    Comp.vz0 = as.numeric(TM.vz0),
+    Rap.vz0 = as.numeric(Rap.vz0),
+    vz0.Delta = as.numeric(vz0.Delta),
+    Comp.ax0 = as.numeric(TM.ax0),
+    Rap.ax0 = as.numeric(Rap.ax0),
+    ax0.Delta = as.numeric(ax0.Delta),
+    Comp.ay0 = as.numeric(TM.ay0),
+    Rap.ay0 = as.numeric(Rap.ay0),
+    ay0.Delta = as.numeric(ay0.Delta),
+    Comp.az0 = as.numeric(TM.az0),
+    Rap.az0 = as.numeric(Rap.az0),
+    az0.Delta = as.numeric(az0.Delta)
+)}
+
+if("Hawk.Eye.Local.DateTime" %in% colnames(comp_data_nosummary)) { # for CSVs with HawkEye as the competitor device (identified because timestamp is labeled "Hawk.Eye.Local.DateTime") -- IF TIMESTAMP LABEL CHANGES, NEED TO UPDATED THIS
+    comp_data_nosummary <- comp_data_nosummary %>% mutate(
+    Comp.PitchTimeStamp = substr(Hawk.Eye.Local.DateTime, 1, 19),
+    # this line subsets the competitor (hawkeye) datetime stamp to ONLY include the first 19 characters which contain the date and time information -- if the format of the data in this column changes, this will need to be adjusted
+    Comp.PitchTimeStamp = as.POSIXct(Comp.PitchTimeStamp, format = "%Y-%m-%d  %H:%M:%S"),
+    Rap.PitchTimeStamp = as.POSIXct(Rap.UTCPitchTimeStamp, format = "%Y-%m-%d%H:%M:%S"),
+    # the above 3 lines of code convert both time stamp columns to R's datetime format, POSIXct, in order to do this, they must be in the format "year-month-day hour:minute:second" (this link provides a tutorial on how to do this: https://www.tutorialkart.com/r-tutorial/r-convert-string-to-datetime/) -- if the format of the data in this column changes, these will need to be adjusted
+    Comp.RelSpeed = as.numeric(Hawk.Eye.RelSpeed),
+    Rap.TotalSpeedmph = as.numeric(Rap.TotalSpeed..mph.),
+    Speed.Delta = as.numeric(Speed.Delta),
+    Comp.SpinRate = as.numeric(Hawk.Eye.SpinRate),
+    Rap.TotalSpin = as.numeric(Rap.TotalSpin),
+    Spin.Delta = as.numeric(Spin.Delta),
+    Comp.InducedVertBreak = as.numeric(Hawk.Eye.InducedVertBreak),
+    Rap.VertBreakTrajectory = as.numeric(Rap.VertBreakTrajectory),
+    VB.Delta = as.numeric(VB.Delta),
+    Comp.HorzBreak = as.numeric(Hawk.Eye.HorzBreak),
+    Rap.HorzBreakTrajectory = as.numeric(Rap.HorzBreakTrajectory),
+    HB.Delta = as.numeric(HB.Delta),
+    Comp.ExitSpeed = as.numeric(Hawk.Eye.ExitSpeed),
+    Comp.Angle = as.numeric(Hawk.Eye.Angle),
+    Comp.Direction = as.numeric(Hawk.Eye.Direction),
+    Rap.HitVelocity = as.numeric(Rap.HitVelocity),
+    Rap.HitVertAngle = as.numeric(Rap.HitVertAngle),
+    Rap.SpinTilt = as.numeric(gsub(":", ".",Rap.Spin.Tilt)),
+    Comp.SpinTilt = as.numeric(gsub(":", ".", Hawk.Eye.Spin.Tilt)),
+    Rap.SZSide = as.numeric(Rap.SZone.Side),
+    Comp.SZSide = as.numeric(Hawk.Eye.SZone.Side),
+    SZoneX.Delta = as.numeric(SZoneX.Delta),
+    Rap.SZHeight = as.numeric(Rap.SZone.Height),
+    Comp.SZHeight = as.numeric(Hawk.Eye.SZone.Height),
+    SZoneY.Delta = as.numeric(SZoneY.Delta),
+    Rap.Direction = as.numeric(Rap.Direction),
+    ExitSpeed.Delta = as.numeric(ExitSpeed.Delta),
+    ExitAngle.Delta = as.numeric(ExitAngle.Delta),
+    ExitDirection.Delta = as.numeric(ExitDirection.Delta),
+    Comp.SpinX = as.numeric(Hawk.Eye.Spin.X),
+    Rap.SpinX = as.numeric(Rap.Spin.X),
+    SpinX.Delta = as.numeric(Spin.X.Delta),
+    Comp.SpinY = as.numeric(Hawk.Eye.Spin.Y),
+    Rap.SpinY = as.numeric(Rap.Spin.Y),
+    SpinY.Delta = as.numeric(Spin.Y.Delta),
+    Comp.SpinZ = as.numeric(Hawk.Eye.Spin.Z),
+    Rap.SpinZ = as.numeric(Rap.Spin.Z),
+    SpinZ.Delta = as.numeric(Spin.Z.Delta),
+    Comp.RelHeight = as.numeric(Hawk.Eye.ReleaseHeight),
+    Rap.RelHeight = as.numeric(Rap.ReleaseHeight),
+    RelHeight.Delta = as.numeric(ReleaseHeight.Delta),
+    Comp.RelExt = as.numeric(Hawk.Eye.ReleaseExtension),
+    Rap.RelExt = as.numeric(Rap.ReleaseExtension),
+    RelExt.Delta = as.numeric(ReleaseExtension.Delta),
+    Comp.RelSide = as.numeric(Hawk.Eye.ReleaseSide),
+    Rap.RelSide = as.numeric(Rap.ReleaseSide),
+    RelSide.Delta = as.numeric(ReleaseSide.Delta),
+    Comp.x0 = as.numeric(Hawk.Eye.x0),
+    Rap.x0 = as.numeric(Rap.x0),
+    x0.Delta = as.numeric(x0.Delta),
+    Comp.y0 = as.numeric(Hawk.Eye.y0),
+    Rap.y0 = as.numeric(Rap.y0),
+    y0.Delta = as.numeric(y0.Delta),
+    Comp.z0 = as.numeric(Hawk.Eye.z0),
+    Rap.z0 = as.numeric(Rap.z0),
+    z0.Delta = as.numeric(z0.Delta),
+    Comp.vx0 = as.numeric(Hawk.Eye.vx0),
+    Rap.vx0 = as.numeric(Rap.vx0),
+    vx0.Delta = as.numeric(vx0.Delta),
+    Comp.vy0 = as.numeric(Hawk.Eye.vy0),
+    Rap.vy0 = as.numeric(Rap.vy0),
+    vy0.Delta = as.numeric(vy0.Delta),
+    Comp.vz0 = as.numeric(Hawk.Eye.vz0),
+    Rap.vz0 = as.numeric(Rap.vz0),
+    vz0.Delta = as.numeric(vz0.Delta),
+    Comp.ax0 = as.numeric(Hawk.Eye.ax0),
+    Rap.ax0 = as.numeric(Rap.ax0),
+    ax0.Delta = as.numeric(ax0.Delta),
+    Comp.ay0 = as.numeric(Hawk.Eye.ay0),
+    Rap.ay0 = as.numeric(Rap.ay0),
+    ay0.Delta = as.numeric(ay0.Delta),
+    Comp.az0 = as.numeric(Hawk.Eye.az0),
+    Rap.az0 = as.numeric(Rap.az0),
+    az0.Delta = as.numeric(az0.Delta))}
+
+})
+
+# next reactive function takes reactive comp_data_nosummary dataframe and mutates it more (mainly making it "long" so it can be used in plots comparing by device)
+
+comp_data_long <- reactive({
+    comp_data_nosummary <- comp_data_nosummary()
+
+comp_data_long <- # chooses based on column names which are newly assigned in chunk above, these would only change if THIS code and the new column assigments are changed (no reason to do this)
+    pivot_longer(comp_data_nosummary, cols = c(Comp.RelSpeed, Comp.SpinRate, Comp.InducedVertBreak, Comp.HorzBreak, Comp.ExitSpeed, Comp.Angle, Comp.SpinTilt, Comp.SZSide, Comp.SZHeight, Comp.Direction, Comp.RelHeight, Comp.RelExt, Comp.RelSide, Comp.x0, Comp.y0, Comp.z0, Comp.vx0, Comp.vy0, Comp.vz0, Comp.ax0, Comp.ay0, Comp.az0, Comp.SpinX, Comp.SpinY, Comp.SpinZ, Rap.TotalSpeedmph, Rap.TotalSpin, Rap.VertBreakTrajectory, Rap.HorzBreakTrajectory, Rap.HitVelocity, Rap.HitVertAngle, Rap.SpinTilt, Rap.SZSide, Rap.SZHeight, Rap.Direction, Rap.RelHeight, Rap.RelExt, Rap.RelSide, Rap.x0, Rap.y0, Rap.z0, Rap.vx0, Rap.vy0, Rap.vz0, Rap.ax0, Rap.ay0, Rap.az0, Rap.SpinX, Rap.SpinY, Rap.SpinZ))
+
+
+
+comp_data_long <- comp_data_long %>% mutate(
+    Device = substr(name, 1, 4),
+    Measurement = substr(name, 5, 26))
+
+if ("TM.UTCDateTime" %in% colnames(comp_data_nosummary)) { # adding columns with labels for device type and metric, for TM Stadium (IF TM STADIUM TIMESTAMP COLUMN LABEL IN MERGED CSV CHANGES, THIS WILL NEED TO BE UPDATED)
+comp_data_long <- comp_data_long %>% mutate(
+    Device = case_when(
+        Device == "Comp"~"TM Stadium",
+        Device == "Rap."~"Rap"),
+    Measurement = case_when(
+        Measurement == ".RelSpeed"~"TotalSpeedmph",
+        Measurement == ".SpinRate"~"TotalSpin",
+        Measurement == ".InducedVertBreak"~"VertBreakTrajectory",
+        Measurement == ".HorzBreak"~"HorzBreakTrajectory",
+        Measurement == ".ExitSpeed"~"HitVelocity",
+        Measurement == ".Angle"~"HitVertAngle",
+        Measurement == ".SpinTilt"~"SpinTilt",
+        Measurement == ".SZSide"~"SZSide",
+        Measurement == ".SZHeight"~"SZHeight",
+        Measurement == ".Direction"~"Direction", ## NEW COLUMNS START IN NEXT LINE
+        Measurement == ".RelHeight"~"RelHeight",
+        Measurement == ".RelExt"~"RelExt",
+        Measurement == ".RelSide"~"RelSide",
+        Measurement == ".x0"~"x0",
+        Measurement == ".y0"~"y0",
+        Measurement == ".z0"~"z0",
+        Measurement == ".vx0"~"vx0",
+        Measurement == ".vy0"~"vy0",
+        Measurement == ".vz0"~"vz0",
+        Measurement == ".ax0"~"ax0",
+        Measurement == ".ay0"~"ay0",
+        Measurement == ".az0"~"az0",
+        Measurement == ".SpinX"~"SpinX",
+        Measurement == ".SpinY"~"SpinY",
+        Measurement == ".SpinZ"~"SpinZ",
+        !is.na(Measurement)~Measurement))
+}
+
+if ("TM.Local.DateTime" %in% colnames(comp_data_nosummary)) { # adding columns with labels for device type and metric, for TM Portable (IF TM PORTABLE TIMESTAMP COLUMN LABEL IN MERGED CSV CHANGES, THIS WILL NEED TO BE UPDATED)
+comp_data_long <- comp_data_long %>% mutate(
+    Device = case_when(
+        Device == "Comp"~"TM Portable",
+        Device == "Rap."~"Rap"),
+    Measurement = case_when(
+        Measurement == ".RelSpeed"~"TotalSpeedmph",
+        Measurement == ".SpinRate"~"TotalSpin",
+        Measurement == ".InducedVertBreak"~"VertBreakTrajectory",
+        Measurement == ".HorzBreak"~"HorzBreakTrajectory",
+        Measurement == ".ExitSpeed"~"HitVelocity",
+        Measurement == ".Angle"~"HitVertAngle",
+        Measurement == ".SpinTilt"~"SpinTilt",
+        Measurement == ".SZSide"~"SZSide",
+        Measurement == ".SZHeight"~"SZHeight",
+        Measurement == ".Direction"~"Direction",
+        Measurement == ".RelHeight"~"RelHeight",
+        Measurement == ".RelExt"~"RelExt",
+        Measurement == ".RelSide"~"RelSide",
+        Measurement == ".x0"~"x0",
+        Measurement == ".y0"~"y0",
+        Measurement == ".z0"~"z0",
+        Measurement == ".vx0"~"vx0",
+        Measurement == ".vy0"~"vy0",
+        Measurement == ".vz0"~"vz0",
+        Measurement == ".ax0"~"ax0",
+        Measurement == ".ay0"~"ay0",
+        Measurement == ".az0"~"az0",
+        Measurement == ".SpinX"~"SpinX",
+        Measurement == ".SpinY"~"SpinY",
+        Measurement == ".SpinZ"~"SpinZ",
+        !is.na(Measurement)~Measurement))
+}
+
+if ("Hawk.Eye.Local.DateTime" %in% colnames(comp_data_nosummary)) { # adding columns with labels for device type and metric, for HawkEye (IF HawkEye TIMESTAMP COLUMN LABEL IN MERGED CSV CHANGES, THIS WILL NEED TO BE UPDATED)
+comp_data_long <- comp_data_long %>% mutate(
+    Device = case_when(
+        Device == "Comp"~"HawkEye",
+        Device == "Rap."~"Rap"),
+    Measurement = case_when(
+        Measurement == ".RelSpeed"~"TotalSpeedmph",
+        Measurement == ".SpinRate"~"TotalSpin",
+        Measurement == ".InducedVertBreak"~"VertBreakTrajectory",
+        Measurement == ".HorzBreak"~"HorzBreakTrajectory",
+        Measurement == ".ExitSpeed"~"HitVelocity",
+        Measurement == ".Angle"~"HitVertAngle",
+        Measurement == ".SpinTilt"~"SpinTilt",
+        Measurement == ".SZSide"~"SZSide",
+        Measurement == ".SZHeight"~"SZHeight",
+        Measurement == ".Direction"~"Direction",
+        Measurement == ".RelHeight"~"RelHeight",
+        Measurement == ".RelExt"~"RelExt",
+        Measurement == ".RelSide"~"RelSide",
+        Measurement == ".x0"~"x0",
+        Measurement == ".y0"~"y0",
+        Measurement == ".z0"~"z0",
+        Measurement == ".vx0"~"vx0",
+        Measurement == ".vy0"~"vy0",
+        Measurement == ".vz0"~"vz0",
+        Measurement == ".ax0"~"ax0",
+        Measurement == ".ay0"~"ay0",
+        Measurement == ".az0"~"az0",
+        Measurement == ".SpinX"~"SpinX",
+        Measurement == ".SpinY"~"SpinY",
+        Measurement == ".SpinZ"~"SpinZ",
+        !is.na(Measurement)~Measurement))
+}
+### dropping some columns that won't be useful
+drop <- c("Rap.TotalSpeed..mph.", "Spin.Delta.Percent", "TM.Direction", "TM.UTCDateTime", "TM.Local.DateTime", "name", "Hawk.Eye.Local.DateTime")
+
+comp_data_long <- comp_data_long[,!(names(comp_data_long) %in% drop)]
+
+comp_data_long <- comp_data_long %>% pivot_wider(names_from = Measurement, values_from = value)
+
+comp_data_long <- comp_data_long %>% mutate(
+    Device = factor(Device, levels = c("Rap", "HawkEye", "TM Stadium", "TM Portable")))
+  
+})
+```
+
+
+Ellipse Plots by Device {data-navmenu="Ellipse and Density Plots by Metric"}
+==================================
+
+Inputs {.sidebar}
+----------------------------------
+
+```{r axes  input}
+# creates drop-down menus for x and y axis variables for ellipse plot, define which choices correspond to which columns
+selectInput(
+        "xvar", label = h4("X-Axis Variable:"),
+        choices = c("TotalSpeed (mph)" = "TotalSpeedmph","Total Spin (rpm)" = "TotalSpin", "Trajectory Vertical Break (in)" = "VertBreakTrajectory", "Trajectory Horizontal Break (in)" = "HorzBreakTrajectory", "Hit Exit Velocity (mph)" = "HitVelocity", "Hit Vertical Angle" = "HitVertAngle", "Spin Tilt" = "SpinTilt", "SZ X-Location (in)" = "SZSide", "SZ Y-Location (in)" = "SZHeight", "Hit Direction" = "Direction", "Release Height (ft)" = "RelHeight", "Release Extension (ft)" = "RelExt", "Release Side (ft)" = "RelSide", "x0", "y0", "z0", "vx0", "vy0", "vz0", "ax0", "ay0", "az0", "SpinX", "SpinY", "SpinZ")
+    )
+
+selectInput(
+    "yvar", label = h4("Y-Axis Variable:"),
+    choices = c("TotalSpeed (mph)" = "TotalSpeedmph","Total Spin (rpm)" = "TotalSpin", "Trajectory Vertical Break (in)" = "VertBreakTrajectory", "Trajectory Horizontal Break (in)" = "HorzBreakTrajectory", "Hit Exit Velocity (mph)" = "HitVelocity", "Hit Vertical Angle" = "HitVertAngle", "Spin Tilt" = "SpinTilt", "SZ X-Location (in)" = "SZSide", "SZ Y-Location (in)" = "SZHeight", "Hit Direction" = "Direction", "Release Height (ft)" = "RelHeight", "Release Extension (ft)" = "RelExt", "Release Side (ft)" = "RelSide", "x0", "y0", "z0", "vx0", "vy0", "vz0", "ax0", "ay0", "az0", "SpinX", "SpinY", "SpinZ")
+)
+
+```
+
+Column {data-width=1000}
+-------------------------------------------------
+
+### Ellipse Plot of Selected Variables
+
+```{r ellipse plot of selected variables}
+renderPlot({
+# code to create ellipse plot -- all of this is reactive, hence why dataframe, comp_data_long, has to be identified in this way (it is a reactive dataframe): 
+
+# this method of ellipse creation creates a 95% confidence ellipse, the smallest ellipse which contains 95% of all samples that can be drawn from the underlying distribution of the data. For information on the documentation/method behind this ellipse plotting, see this link: https://ggplot2.tidyverse.org/reference/stat_ellipse.html 
+    
+    comp_data_long <- comp_data_long()
+    
+    centroids <- reactive({
+        comp_data_long %>% group_by(Device) %>% summarise(xavg = mean(!!sym(input$xvar), na.rm=T), yavg = mean(!!sym(input$yvar), na.rm = T))})
+    
+    ggplot(comp_data_long, aes_string(x = input$xvar, y = input$yvar), aes(col = Device)) +
+        stat_ellipse(geom = "polygon", aes(col = Device, fill = Device), alpha = 0.25) +
+        geom_point(data = centroids(), aes(x = xavg, y = yavg, col = Device), size = 4, shape = 18, alpha = 0.75) +
+        labs(x = input$xvar, y = input$yvar, title = "Distribution of Chosen Metrics with Centroids Colored by Device", color = "Device")
+})
+
+```
+
+<!-- 4 lines below identify page name AND which dropdown it goes under, then specifies that the 2 plots on this page (speed and spin) should be in a column format, one on top of the other, taking up the whole page width (data-width=1000) -->
+
+Speed and Spin Density Plots {data-navmenu="Ellipse and Density Plots by Metric"}
+==================================
+
+Column {data-width=1000}
+-------------------------------------------------
+
+### Speed Density Plot: Rapsodo vs. Competitor with Vertical Lines for Means
+
+```{r speed density plot}
+# density plot code for speed (next several chunks are density plot codes for different metrics, all the same except for the metric specified -- speed is replaced by whatever metric is used in subsequent plots)
+renderPlot({
+    comp_data_long <- comp_data_long()
+    
+    centroids <- comp_data_long %>% filter(TotalSpeedmph != 0) %>% group_by(Device) %>% summarise(mean.speed = mean(TotalSpeedmph))
+    ggplot(comp_data_long, aes(x = TotalSpeedmph, y = ..density.., col = Device)) +
+    geom_density() +
+    geom_vline(data = centroids, aes(xintercept = mean.speed, color = Device)) +
+    geom_text(data = centroids, inhereit.aes = FALSE, aes(x = mean.speed, label = round(mean.speed, 2), y = c(0, 0.05)),  col = "black") +
+    labs(x = "Total Speed (mph)", y = "Density", title = "Speed Density Plot with Means to Compare Rapsodo and Competitor Device") +
+    xlim(50, 100)
+})
+
+```
+
+
+### Spin Density Plot: Rapsodo vs. Competitor with Vertical Lines for Means
+
+```{r spin density plot}
+renderPlot({
+    comp_data_long <- comp_data_long()
+   
+    centroids <- comp_data_long %>% filter(TotalSpin != 0) %>% group_by(Device) %>% summarise(mean.spin = mean(TotalSpin))
+    ggplot(comp_data_long, aes(x = TotalSpin, y = ..density.., col = Device)) +
+    geom_density() +
+    geom_vline(data = centroids, aes(xintercept = mean.spin, color = Device)) +
+    geom_text(data = centroids, inhereit.aes = FALSE, aes(x = mean.spin, label = round(mean.spin, 2), y = c(0, 0.001)),  col = "black") +
+    labs(x = "Total Spin (rpm)", y = "Density", title = "Spin Density Plot with Means to Compare Rapsodo and Competitor Device") +
+  #  theme(plot.title = element_text(size = 10)) +
+    xlim(1000, 3000)
+})
+
+```
+
+Trajectory Vertical and Horizontal Break Density Plots {data-navmenu="Ellipse and Density Plots by Metric"}
+==================================
+
+Column {data-width=1000}
+-------------------------------------------------
+
+### Trajectory Vertical Break Density Plot: Rapsodo vs. Competitor with Vertical Lines for Means
+
+```{r tvb density plot}
+renderPlot({
+    comp_data_long <- comp_data_long()
+   
+    centroids <- comp_data_long %>% filter(VertBreakTrajectory != 0) %>% group_by(Device) %>% summarise(mean.tvb= mean(VertBreakTrajectory))
+    ggplot(comp_data_long, aes(x = VertBreakTrajectory, y = ..density.., col = Device)) +
+    geom_density() +
+    geom_vline(data = centroids, aes(xintercept = mean.tvb, color = Device)) +
+    geom_text(data = centroids, inhereit.aes = FALSE, aes(x = mean.tvb, label = round(mean.tvb, 2), y = c(0, 0.005)),  col = "black") +
+    labs(x = "Trajectory Vertical Break (in)", y = "Density", title = "Trajectory VB Density Plot with Means to Compare Rapsodo and Competitor Device") +
+    xlim(-30, 30)
+})
+
+```
+
+### Trajectory Horizontal Break Density Plot: Rapsodo vs. Competitor with Vertical Lines for Means
+
+```{r thb density plot}
+renderPlot({
+    comp_data_long <- comp_data_long()
+
+    centroids <- comp_data_long %>% filter(HorzBreakTrajectory != 0) %>% group_by(Device) %>% summarise(mean.thb= mean(HorzBreakTrajectory))
+    ggplot(comp_data_long, aes(x = HorzBreakTrajectory, y = ..density.., col = Device)) +
+    geom_density() +
+    geom_vline(data = centroids, aes(xintercept = mean.thb, color = Device)) +
+    geom_text(data = centroids, inhereit.aes = FALSE, aes(x = mean.thb, label = round(mean.thb, 2), y = c(0, 0.005)),  col = "black") +
+    labs(x = "Trajectory Horizontal Break (in)", y = "Density", title = "Trajectory HB Density Plot with Means to Compare Rapsodo and Competitor Device") +
+    xlim(-15, 15)
+})
+
+```
+
+
+Strike Zone Side (X) and Height (Y) Density Plots {data-navmenu="Ellipse and Density Plots by Metric"}
+==================================
+
+Column {data-width=1000}
+-------------------------------------------------
+
+### Strike Zone Side (X-Location) Density Plot: Rapsodo vs. Competitor with Vertical Lines for Means
+
+```{r szside density plot}
+renderPlot({
+    comp_data_long <- comp_data_long()
+   
+    centroids <- comp_data_long %>% filter(SZSide != 0) %>% group_by(Device) %>% summarise(mean.szside= mean(SZSide))
+    ggplot(comp_data_long, aes(x = SZSide, y = ..density.., col = Device)) +
+    geom_density() +
+    geom_vline(data = centroids, aes(xintercept = mean.szside, color = Device)) +
+    geom_text(data = centroids, inhereit.aes = FALSE, aes(x = mean.szside, label = round(mean.szside, 2), y = c(0, 0.005)),  col = "black") +
+    labs(x = "Strike Zone Side/X (in)", y = "Density", title = "SZ Side Density Plot with Means to Compare Rapsodo and Competitor Device") +
+    xlim(-30, 40)
+})
+
+```
+
+
+### Strike Zone Height (Y-Location) Density Plot: Rapsodo vs. Competitor with Vertical Lines for Means
+
+```{r szheight density plot}
+renderPlot({
+    comp_data_long <- comp_data_long()
+  
+    centroids <- comp_data_long %>% filter(SZHeight != 0) %>% group_by(Device) %>% summarise(mean.szheight= mean(SZHeight))
+    ggplot(comp_data_long, aes(x = SZHeight, y = ..density.., col = Device)) +
+    geom_density() +
+    geom_vline(data = centroids, aes(xintercept = mean.szheight, color = Device)) +
+    geom_text(data = centroids, inhereit.aes = FALSE, aes(x = mean.szheight, label = round(mean.szheight, 2), y = c(0, 0.005)),  col = "black") +
+    labs(x = "Strike Zone Height/Y (in)", y = "Density", title = "SZ Height Density Plot with Means to Compare Rapsodo and Competitor Device") +
+    xlim(0, 60)
+})
+
+```
+
+Release Height, Side, and Extension Density Plots {data-navmenu="Ellipse and Density Plots by Metric"}
+==================================
+
+Column {data-width=1000}
+-------------------------------------------------
+
+### Pitch Release Height Density Plot: Rapsodo vs. Competitor with Vertical Lines for Means
+
+```{r relheight density plot}
+renderPlot({
+    comp_data_long <- comp_data_long()
+   
+    centroids <- comp_data_long %>% filter(RelHeight != 0) %>% group_by(Device) %>% summarise(mean.relheight= mean(RelHeight))
+    ggplot(comp_data_long, aes(x = RelHeight, y = ..density.., col = Device)) +
+    geom_density() +
+    geom_vline(data = centroids, aes(xintercept = mean.relheight, color = Device)) +
+    geom_text(data = centroids, inhereit.aes = FALSE, aes(x = mean.relheight, label = round(mean.relheight, 2), y = c(0, 0.25)),  col = "black") +
+    labs(x = "Release Height (ft)", y = "Density", title = "Release Height Density Plot with Means to Compare Rapsodo and Competitor Device") +
+    xlim(4.5, 7.5)
+})
+
+```
+
+### Pitch Release Side Density Plot: Rapsodo vs. Competitor with Vertical Lines for Means
+
+```{r relside density plot}
+renderPlot({
+    comp_data_long <- comp_data_long()
+
+    centroids <- comp_data_long %>% filter(RelSide != 0) %>% group_by(Device) %>% summarise(mean.relside= mean(RelSide))
+    ggplot(comp_data_long, aes(x = RelSide, y = ..density.., col = Device)) +
+    geom_density() +
+    geom_vline(data = centroids, aes(xintercept = mean.relside, color = Device)) +
+    geom_text(data = centroids, inhereit.aes = FALSE, aes(x = mean.relside, label = round(mean.relside, 2), y = c(0, 0.1)),  col = "black") +
+    labs(x = "Release Side (ft)", y = "Density", title = "Release Side Density Plot with Means to Compare Rapsodo and Competitor Device") +
+    xlim(-1, 4)
+})
+
+```
+
+### Pitch Release Extension Density Plot: Rapsodo vs. Competitor with Vertical Lines for Means
+
+```{r relextension density plot}
+renderPlot({
+    comp_data_long <- comp_data_long()
+ 
+    centroids <- comp_data_long %>% filter(RelExt != 0) %>% group_by(Device) %>% summarise(mean.relext= mean(RelExt))
+    ggplot(comp_data_long, aes(x = RelExt, y = ..density.., col = Device)) +
+    geom_density() +
+    geom_vline(data = centroids, aes(xintercept = mean.relext, color = Device)) +
+    geom_text(data = centroids, inhereit.aes = FALSE, aes(x = mean.relext, label = round(mean.relext, 2), y = c(0, 0.25)),  col = "black") +
+    labs(x = "Release Extension (ft)", y = "Density", title = "Release Extension Density Plot with Means to Compare Rapsodo and Competitor Device") +
+    xlim(3, 8)
+})
+
+```
+
+Spin X, Spin Y, and Spin Z Density Plots {data-navmenu="Ellipse and Density Plots by Metric"}
+==================================
+
+Column {data-width=1000}
+-------------------------------------------------
+
+### Pitch Spin X Density Plot: Rapsodo vs. Competitor with Vertical Lines for Means
+
+```{r spinx density plot}
+renderPlot({
+    comp_data_long <- comp_data_long()
+   
+    centroids <- comp_data_long %>% filter(SpinX != 0) %>% group_by(Device) %>% summarise(mean.spinx= mean(SpinX))
+    ggplot(comp_data_long, aes(x = SpinX, y = ..density.., col = Device)) +
+    geom_density() +
+    geom_vline(data = centroids, aes(xintercept = mean.spinx, color = Device)) +
+    geom_text(data = centroids, inhereit.aes = FALSE, aes(x = mean.spinx, label = round(mean.spinx, 2), y = c(0, 0.0005)),  col = "black") +
+    labs(x = "Spin X (rpm)", y = "Density", title = "Spin X Density Plot with Means to Compare Rapsodo and Competitor Device") +
+    xlim(-2000, 1000)
+})
+
+```
+
+### Pitch Spin Y Density Plot: Rapsodo vs. Competitor with Vertical Lines for Means
+
+```{r spiny density plot}
+
+renderPlot({
+    comp_data_long <- comp_data_long()
+   
+    centroids <- comp_data_long %>% filter(SpinY != 0) %>% group_by(Device) %>% summarise(mean.spiny= mean(SpinY))
+    ggplot(comp_data_long, aes(x = SpinY, y = ..density.., col = Device)) +
+    geom_density() +
+    geom_vline(data = centroids, aes(xintercept = mean.spiny, color = Device)) +
+    geom_text(data = centroids, inhereit.aes = FALSE, aes(x = mean.spiny, label = round(mean.spiny, 2), y = c(0, 0.0005)),  col = "black") +
+    labs(x = "Spin Y (rpm)", y = "Density", title = "Spin Y Density Plot with Means to Compare Rapsodo and Competitor Device") +
+    xlim(-2000, 1000)
+})
+
+```
+
+### Pitch Spin Z Density Plot: Rapsodo vs. Competitor with Vertical Lines for Means
+
+```{r spinz density plot}
+
+renderPlot({
+    comp_data_long <- comp_data_long()
+   
+    centroids <- comp_data_long %>% filter(SpinZ != 0) %>% group_by(Device) %>% summarise(mean.spinz= mean(SpinZ))
+    ggplot(comp_data_long, aes(x = SpinZ, y = ..density.., col = Device)) +
+    geom_density() +
+    geom_vline(data = centroids, aes(xintercept = mean.spinz, color = Device)) +
+    geom_text(data = centroids, inhereit.aes = FALSE, aes(x = mean.spinz, label = round(mean.spinz, 2), y = c(0, 0.0005)),  col = "black") +
+    labs(x = "Spin Z (rpm)", y = "Density", title = "Spin Z Density Plot with Means to Compare Rapsodo and Competitor Device") +
+    xlim(-2000, 1000)
+})
+
+```
+
+X-Position, Y-Position, and Z-Position Density Plots {data-navmenu="Ellipse and Density Plots by Metric"}
+==================================
+
+Column {data-width=1000}
+-------------------------------------------------
+
+### Pitch X-Position Density Plot: Rapsodo vs. Competitor with Vertical Lines for Means
+
+```{r xposition density plot}
+
+renderPlot({
+    comp_data_long <- comp_data_long()
+  
+    centroids <- comp_data_long %>% filter(x0 != 0) %>% group_by(Device) %>% summarise(mean.x0= mean(x0))
+    
+    ggplot(comp_data_long, aes(x = x0, y = ..density.., col = Device)) +
+    geom_density() +
+    geom_vline(data = centroids, aes(xintercept = mean.x0, color = Device)) +
+    geom_text(data = centroids, inhereit.aes = FALSE, aes(x = mean.x0, label = round(mean.x0, 2), y = c(0, 0.0005)),  col = "black") +
+    labs(x = "x0 Position (inches)", y = "Density", title = "X-Position Density Plot with Means to Compare Rapsodo and Competitor Device") 
+})
+
+```
+
+### Pitch Y-Position Density Plot: Rapsodo vs. Competitor with Vertical Lines for Means
+
+```{r yposition density plot}
+
+renderPlot({
+    comp_data_long <- comp_data_long()
+
+    centroids <- comp_data_long %>% filter(y0 != 0) %>% group_by(Device) %>% summarise(mean.y0= mean(y0))
+    ggplot(comp_data_long, aes(x = y0, y = ..density.., col = Device)) +
+    geom_density() +
+    geom_vline(data = centroids, aes(xintercept = mean.y0, color = Device)) +
+    geom_text(data = centroids, inhereit.aes = FALSE, aes(x = mean.y0, label = round(mean.y0, 2), y = 0),  col = "black") +
+    labs(x = "y0 Position (inches)", y = "Density", title = "Y-Position Density Plot with Means to Compare Rapsodo and Competitor Device") 
+})
+
+```
+
+### Pitch Z-Position Density Plot: Rapsodo vs. Competitor with Vertical Lines for Means
+
+```{r zposition density plot}
+
+renderPlot({
+    comp_data_long <- comp_data_long()
+
+    centroids <- comp_data_long %>% filter(z0 != 0) %>% group_by(Device) %>% summarise(mean.z0= mean(z0))
+    ggplot(comp_data_long, aes(x = z0, y = ..density.., col = Device)) +
+    geom_density() +
+    geom_vline(data = centroids, aes(xintercept = mean.z0, color = Device)) +
+    geom_text(data = centroids, inhereit.aes = FALSE, aes(x = mean.z0, label = round(mean.z0, 2), y = c(0, 0.0005)),  col = "black") +
+    labs(x = "z0 Position (inches)", y = "Density", title = "Z-Position Density Plot with Means to Compare Rapsodo and Competitor Device") 
+})
+
+```
+
+X-Velocity, Y-Velocity, and Z-Velocity Density Plots {data-navmenu="Ellipse and Density Plots by Metric"}
+==================================
+
+Column {data-width=1000}
+-------------------------------------------------
+
+### Pitch X-Velocity Density Plot: Rapsodo vs. Competitor with Vertical Lines for Means
+
+```{r xvelocity density plot}
+
+renderPlot({
+    comp_data_long <- comp_data_long()
+  
+    centroids <- comp_data_long %>% filter(vx0 != 0) %>% group_by(Device) %>% summarise(mean.vx0= mean(vx0))
+    ggplot(comp_data_long, aes(x = vx0, y = ..density.., col = Device)) +
+    geom_density() +
+    geom_vline(data = centroids, aes(xintercept = mean.vx0, color = Device)) +
+    geom_text(data = centroids, inhereit.aes = FALSE, aes(x = mean.vx0, label = round(mean.vx0, 2), y = c(0, 0.025)),  col = "black") +
+    labs(x = "x0 Velocity (mph)", y = "Density", title = "X-Velocity Density Plot with Means to Compare Rapsodo and Competitor Device")
+})
+
+```
+
+### Pitch Y-Velocity Density Plot: Rapsodo vs. Competitor with Vertical Lines for Means
+
+```{r yvelocity density plot}
+
+renderPlot({
+    comp_data_long <- comp_data_long()
+   
+    centroids <- comp_data_long %>% filter(vy0 != 0) %>% group_by(Device) %>% summarise(mean.vy0= mean(vy0))
+    ggplot(comp_data_long, aes(x = vy0, y = ..density.., col = Device)) +
+    geom_density() +
+    geom_vline(data = centroids, aes(xintercept = mean.vy0, color = Device)) +
+    geom_text(data = centroids, inhereit.aes = FALSE, aes(x = mean.vy0, label = round(mean.vy0, 2), y = c(0, 0.0005)),  col = "black") +
+    labs(x = "y0 Velocity (mph)", y = "Density", title = "Y-Velocity Density Plot with Means to Compare Rapsodo and Competitor Device") 
+})
+
+```
+
+### Pitch Z-Velocity Density Plot: Rapsodo vs. Competitor with Vertical Lines for Means
+
+```{r zvelocity density plot}
+
+renderPlot({
+    comp_data_long <- comp_data_long()
+
+    centroids <- comp_data_long %>% filter(vz0 != 0) %>% group_by(Device) %>% summarise(mean.vz0= mean(vz0))
+    ggplot(comp_data_long, aes(x = vz0, y = ..density.., col = Device)) +
+    geom_density() +
+    geom_vline(data = centroids, aes(xintercept = mean.vz0, color = Device)) +
+    geom_text(data = centroids, inhereit.aes = FALSE, aes(x = mean.vz0, label = round(mean.vz0, 2), y = c(0, 0.0005)),  col = "black") +
+    labs(x = "z0 Velocity (mph)", y = "Density", title = "Z-Velocity Density Plot with Means to Compare Rapsodo and Competitor Device") 
+})
+
+```
+
+X-Acceleration, Y-Acceleration, and Z-Acceleration Density Plots {data-navmenu="Ellipse and Density Plots by Metric"}
+==================================
+
+Column {data-width=1000}
+-------------------------------------------------
+
+### Pitch X-Acceleration Density Plot: Rapsodo vs. Competitor with Vertical Lines for Means
+
+```{r xaccel density plot}
+
+renderPlot({
+    comp_data_long <- comp_data_long()
+
+    centroids <- comp_data_long %>% filter(ax0 != 0) %>% group_by(Device) %>% summarise(mean.ax0= mean(ax0))
+    ggplot(comp_data_long, aes(x = ax0, y = ..density.., col = Device)) +
+    geom_density() +
+    geom_vline(data = centroids, aes(xintercept = mean.ax0, color = Device)) +
+    geom_text(data = centroids, inhereit.aes = FALSE, aes(x = mean.ax0, label = round(mean.ax0, 2), y = c(0, 0.0005)),  col = "black") +
+    labs(x = "x0 Acceleration", y = "Density", title = "X-Acceleration Density Plot with Means to Compare Rapsodo and Competitor Device") 
+})
+
+```
+
+### Pitch Y-Acceleration Density Plot: Rapsodo vs. Competitor with Vertical Lines for Means
+
+```{r yaccel density plot}
+
+renderPlot({
+    comp_data_long <- comp_data_long()
+   
+    centroids <- comp_data_long %>% filter(ay0 != 0) %>% group_by(Device) %>% summarise(mean.ay0= mean(ay0))
+    ggplot(comp_data_long, aes(x = ay0, y = ..density.., col = Device)) +
+    geom_density() +
+    geom_vline(data = centroids, aes(xintercept = mean.ay0, color = Device)) +
+    geom_text(data = centroids, inhereit.aes = FALSE, aes(x = mean.ay0, label = round(mean.ay0, 2), y = c(0, 0.0005)),  col = "black") +
+    labs(x = "y0 Acceleration", y = "Density", title = "Y-Acceleration Density Plot with Means to Compare Rapsodo and Competitor Device") 
+})
+
+```
+
+### Pitch Z-Acceleration Density Plot: Rapsodo vs. Competitor with Vertical Lines for Means
+
+```{r zaccel density plot}
+
+renderPlot({
+    comp_data_long <- comp_data_long()
+  
+    centroids <- comp_data_long %>% filter(az0 != 0) %>% group_by(Device) %>% summarise(mean.az0= mean(az0))
+    ggplot(comp_data_long, aes(x = az0, y = ..density.., col = Device)) +
+    geom_density() +
+    geom_vline(data = centroids, aes(xintercept = mean.az0, color = Device)) +
+    geom_text(data = centroids, inhereit.aes = FALSE, aes(x = mean.az0, label = round(mean.az0, 2), y = c(0, 0.0005)),  col = "black") +
+    labs(x = "z0 Acceleration", y = "Density", title = "Z-Acceleration Density Plot with Means to Compare Rapsodo and Competitor Device") 
+})
+
+```
+
+
+
+Hit Exit Velocity, Angle, and Direction Density Plots {data-navmenu="Ellipse and Density Plots by Metric"}
+==================================
+
+Column {data-width=1000}
+-------------------------------------------------
+
+### Hit Exit Velocity Density Plot: Rapsodo vs. Competitor with Vertical Lines for Means
+
+```{r exit velo density plot}
+renderPlot({
+    comp_data_long <- comp_data_long()
+  
+    centroids <- comp_data_long %>% filter(HitVelocity != 0) %>% group_by(Device) %>% summarise(mean.hitvelo= mean(HitVelocity))
+    ggplot(comp_data_long, aes(x = HitVelocity, y = ..density.., col = Device)) +
+    geom_density() +
+    geom_vline(data = centroids, aes(xintercept = mean.hitvelo, color = Device)) +
+    geom_text(data = centroids, inhereit.aes = FALSE, aes(x = mean.hitvelo, label = round(mean.hitvelo, 2), y = (0)),  col = "black") +
+    labs(x = "Hit Exit Velocity (mph)", y = "Density", title = "Hit Exit Velo Density Plot with Means to Compare Rapsodo and Competitor Device")
+})
+
+```
+
+
+### Hit Vertical Angle Density Plot: Rapsodo vs. Competitor with Vertical Lines for Means
+
+```{r hit angle density plot}
+renderPlot({
+    comp_data_long <- comp_data_long()
+   
+    centroids <- comp_data_long %>% filter(HitVertAngle != 0) %>% group_by(Device) %>% summarise(mean.hitangle= mean(HitVertAngle))
+    ggplot(comp_data_long, aes(x = HitVertAngle, y = ..density.., col = Device)) +
+    geom_density() +
+    geom_vline(data = centroids, aes(xintercept = mean.hitangle, color = Device)) +
+    geom_text(data = centroids, inhereit.aes = FALSE, aes(x = mean.hitangle, label = round(mean.hitangle, 2), y = 0),  col = "black") +
+    labs(x = "Hit Vertical Angle", y = "Density", title = "Hit Vert Angle Density Plot with Means to Compare Rapsodo and Competitor Device") 
+})
+
+```
+
+### Hit Direction Density Plot: Rapsodo vs. Competitor with Vertical Lines for Means
+
+```{r hit direction density plot}
+renderPlot({
+    comp_data_long <- comp_data_long()
+   
+    centroids <- comp_data_long %>% filter(Direction != 0) %>% group_by(Device) %>% summarise(mean.direction= mean(Direction))
+    ggplot(comp_data_long, aes(x = Direction, y = ..density.., col = Device)) +
+    geom_density() +
+    geom_vline(data = centroids, aes(xintercept = mean.direction, color = Device)) +
+    geom_text(data = centroids, inhereit.aes = FALSE, aes(x = mean.direction, label = round(mean.direction, 2), y = 0),  col = "black") +
+    labs(x = "Hit Direction", y = "Density", title = "Hit Direction Density Plot with Means to Compare Rapsodo and Competitor Device") 
+})
+
+```
+
+<!-- Here starts the next new type of plot (defect bar charts), which are under a new drop-down header, given a different name after "data-navmenu=" -->
+
+Defect Bar Charts {data-navmenu="Defect Bar Charts"} 
+==================================
+
+Column {data-width=500}
+-------------------------------------------------
+
+```{r reactive manually getting defectperc for charts}
+# reactive code to mutate the data and create a dataframe which gives the defect percentage for each metric (defect = if there is a blank OR it = 0) -- CODE to get these numbers directly from the summary rows at the bottom of merged CSVs is commented out at the bottom of this script
+
+comp_data_long_barplot <- reactive({
+     comp_data_nosummary <- comp_data_nosummary()
+
+if ("TM.UTCDateTime" %in% colnames(comp_data_nosummary)) { # relies on "TM.UTCDateTime" being the timestamp column name for TM Stadium CSVs!! will have to be changed if this changes
+
+comp_data_num <- comp_data_nosummary %>% mutate(
+    `TM Stad Speed` = as.numeric(Comp.RelSpeed),
+    `Rap Speed` = as.numeric(Rap.TotalSpeedmph),
+    Speed.Delta = as.numeric(Speed.Delta),
+    `TM Stad Spin` = as.numeric(Comp.SpinRate),
+    `Rap Spin` = as.numeric(Rap.TotalSpin),
+    Spin.Delta = as.numeric(Spin.Delta),
+    `TM Stad TVB` = as.numeric(Comp.InducedVertBreak),
+    `Rap TVB` = as.numeric(Rap.VertBreakTrajectory),
+    `TM Stad THB` = as.numeric(Comp.HorzBreak),
+    `Rap THB` = as.numeric(Rap.HorzBreakTrajectory),
+    `TM Stad Hit Velo` = as.numeric(Comp.ExitSpeed),
+    `TM Stad Hit Angle` = as.numeric(Comp.Angle),
+    `Rap Hit Velo` = as.numeric(Rap.HitVelocity),
+    `Rap Hit Angle` = as.numeric(Rap.HitVertAngle),
+     VB.Delta = as.numeric(VB.Delta),
+    `TM Stad SZ Side` = as.numeric(Comp.SZSide),
+    `Rap SZ Side` = as.numeric(Rap.SZone.Side),
+    SZoneX.Delta = as.numeric(SZoneX.Delta),
+    `TM Stad SZ Height` = as.numeric(Comp.SZHeight),
+    `Rap SZ Height` = as.numeric(Rap.SZone.Height),
+    SZoneY.Delta = as.numeric(SZoneY.Delta),
+    HB.Delta = as.numeric(HB.Delta),
+    `TM Stad Hit Direction` = as.numeric(Comp.Direction),
+    `Rap Hit Direction` = as.numeric(Rap.Direction),
+    ExitDirection.Delta = as.numeric(ExitDirection.Delta),
+    ExitSpeed.Delta = as.numeric(ExitSpeed.Delta),
+    ExitAngle.Delta = as.numeric(ExitAngle.Delta), 
+    `TM Stad Spin X` = as.numeric(Comp.SpinX),
+    `Rap Spin X` = as.numeric(Rap.Spin.X),
+    Spin.X.Delta = as.numeric(Spin.X.Delta),
+    `TM Stad Spin Y` = as.numeric(Comp.SpinY),
+    `Rap Spin Y` = as.numeric(Rap.Spin.Y), 
+    Spin.Y.Delta = as.numeric(Spin.Y.Delta),
+    `TM Stad Spin Z` = as.numeric(Comp.SpinZ),
+    `Rap Spin Z` = as.numeric(Rap.Spin.Z),
+    Spin.Z.Delta = as.numeric(Spin.Z.Delta),
+    `TM Stad Rel Height` = as.numeric(Comp.RelHeight),
+    `Rap Rel Height` = as.numeric(Rap.ReleaseHeight),
+    ReleaseHeight.Delta = as.numeric(ReleaseHeight.Delta),
+    `TM Stad Rel Extension` = as.numeric(Comp.RelExt),
+    `Rap Rel Extension` = as.numeric(Rap.ReleaseExtension),
+    ReleaseExtension.Delta = as.numeric(ReleaseExtension.Delta),
+    `TM Stad Rel Side` = as.numeric(Comp.RelSide),
+    `Rap Rel Side` = as.numeric(Rap.ReleaseSide),
+    ReleaseSide.Delta = as.numeric(ReleaseSide.Delta),
+    `TM Stad x0` = as.numeric(Comp.x0),
+    `Rap x0` = as.numeric(Rap.x0),
+    x0.Delta = as.numeric(x0.Delta),
+    `TM Stad y0` = as.numeric(Comp.y0),
+    `Rap y0` = as.numeric(Rap.y0),
+    y0.Delta = as.numeric(y0.Delta),
+    `TM Stad z0` = as.numeric(Comp.z0),
+    `Rap z0` = as.numeric(Rap.z0),
+    z0.Delta = as.numeric(z0.Delta),
+    `TM Stad vx0` = as.numeric(Comp.vx0),
+    `Rap vx0` = as.numeric(Rap.vx0),
+    vx0.Delta = as.numeric(vx0.Delta),
+    `TM Stad vy0` = as.numeric(Comp.vy0),
+    `Rap vy0` = as.numeric(Rap.vy0),
+    vy0.Delta = as.numeric(vy0.Delta),
+    `TM Stad vz0` = as.numeric(Comp.vz0),
+    `Rap vz0` = as.numeric(Rap.vz0),
+    vz0.Delta = as.numeric(vz0.Delta),
+    `TM Stad ax0` = as.numeric(Comp.ax0),
+    `Rap ax0` = as.numeric(Rap.ax0),
+    ax0.Delta = as.numeric(ax0.Delta),
+    `TM Stad ay0` = as.numeric(Comp.ay0),
+    `Rap ay0` = as.numeric(Rap.ay0),
+    ay0.Delta = as.numeric(ay0.Delta),
+    `TM Stad az0` = as.numeric(Comp.az0),
+    `Rap az0` = as.numeric(Rap.az0),
+    az0.Delta = as.numeric(az0.Delta)
+)
+
+
+
+
+comp_summary <- comp_data_num %>% select(`TM Stad Speed`, `Rap Speed`, Speed.Delta, `TM Stad Spin`, `Rap Spin`, Spin.Delta,`TM Stad TVB`, `Rap TVB`, `TM Stad THB`, `Rap THB`, `TM Stad Hit Velo`,  `Rap Hit Velo`, `TM Stad Hit Angle`, `Rap Hit Angle`, VB.Delta, `TM Stad SZ Side`, `Rap SZ Side`, SZoneX.Delta, `TM Stad SZ Height`, `Rap SZ Height`, SZoneY.Delta, HB.Delta, `TM Stad Hit Direction`, `Rap Hit Direction`, ExitDirection.Delta, ExitSpeed.Delta, ExitAngle.Delta, `TM Stad Spin X`, `Rap Spin X`, Spin.X.Delta, `TM Stad Spin Y`, `Rap Spin Y`, Spin.Y.Delta,`TM Stad Spin Z`, `Rap Spin Z`, Spin.Z.Delta, `TM Stad Rel Height`, `Rap Rel Height`, ReleaseHeight.Delta, `TM Stad Rel Extension`, `Rap Rel Extension`, ReleaseExtension.Delta, `TM Stad Rel Side`, `Rap Rel Side`,  ReleaseSide.Delta, `TM Stad x0`, `Rap x0`, x0.Delta, `TM Stad y0`, `Rap y0`, y0.Delta, `TM Stad z0`, `Rap z0`,  z0.Delta, `TM Stad vx0`, `Rap vx0`, vx0.Delta, `TM Stad vy0`, `Rap vy0`, vy0.Delta, `TM Stad vz0`,`Rap vz0`,  vz0.Delta, `TM Stad ax0`, `Rap ax0`, ax0.Delta, `TM Stad ay0`, `Rap ay0`, ay0.Delta, `TM Stad az0`,`Rap az0`, az0.Delta
+) 
+
+}
+
+if ("TM.Local.DateTime" %in% colnames(comp_data_nosummary)) { # relies on "TM.Local.DateTime" being the timestamp column name for TM Portable CSVs!! will have to be changed if this changes
+
+comp_data_num <- comp_data_nosummary %>% mutate(
+    `TM Port Speed` = as.numeric(Comp.RelSpeed),
+    `Rap Speed` = as.numeric(Rap.TotalSpeedmph),
+    Speed.Delta = as.numeric(Speed.Delta),
+    `TM Port Spin` = as.numeric(Comp.SpinRate),
+    `Rap Spin` = as.numeric(Rap.TotalSpin),
+    Spin.Delta = as.numeric(Spin.Delta),
+    `TM Port TVB` = as.numeric(Comp.InducedVertBreak),
+    `Rap TVB` = as.numeric(Rap.VertBreakTrajectory),
+    `TM Port THB` = as.numeric(Comp.HorzBreak),
+    `Rap THB` = as.numeric(Rap.HorzBreakTrajectory),
+    `TM Port Hit Velo` = as.numeric(Comp.ExitSpeed),
+    `TM Port Hit Angle` = as.numeric(Comp.Angle),
+    `Rap Hit Velo` = as.numeric(Rap.HitVelocity),
+    `Rap Hit Angle` = as.numeric(Rap.HitVertAngle),
+     VB.Delta = as.numeric(VB.Delta),
+    `TM Port SZ Side` = as.numeric(Comp.SZSide), 
+    `Rap SZ Side` = as.numeric(Rap.SZone.Side),
+    SZoneX.Delta = as.numeric(SZoneX.Delta),
+    `TM Port SZ Height` = as.numeric(Comp.SZHeight),
+    `Rap SZ Height` = as.numeric(Rap.SZone.Height),
+    SZoneY.Delta = as.numeric(SZoneY.Delta),
+    HB.Delta = as.numeric(HB.Delta),
+    `TM Port Hit Direction` = as.numeric(Comp.Direction),
+    `Rap Hit Direction` = as.numeric(Rap.Direction),
+    ExitDirection.Delta = as.numeric(ExitDirection.Delta),
+    ExitSpeed.Delta = as.numeric(ExitSpeed.Delta),
+    ExitAngle.Delta = as.numeric(ExitAngle.Delta),
+    `TM Port Spin X` = as.numeric(Comp.SpinX),
+    `Rap Spin X` = as.numeric(Rap.Spin.X),
+    Spin.X.Delta = as.numeric(Spin.X.Delta),
+    `TM Port Spin Y` = as.numeric(Comp.SpinY),
+    `Rap Spin Y` = as.numeric(Rap.Spin.Y), 
+    Spin.Y.Delta = as.numeric(Spin.Y.Delta),
+    `TM Port Spin Z` = as.numeric(Comp.SpinZ),
+    `Rap Spin Z` = as.numeric(Rap.Spin.Z),
+    Spin.Z.Delta = as.numeric(Spin.Z.Delta),
+    `TM Port Rel Height` = as.numeric(Comp.RelHeight),
+    `Rap Rel Height` = as.numeric(Rap.ReleaseHeight),
+    ReleaseHeight.Delta = as.numeric(ReleaseHeight.Delta),
+    `TM Port Rel Extension` = as.numeric(Comp.RelExt),
+    `Rap Rel Extension` = as.numeric(Rap.ReleaseExtension),
+    ReleaseExtension.Delta = as.numeric(ReleaseExtension.Delta),
+    `TM Port Rel Side` = as.numeric(Comp.RelSide),
+    `Rap Rel Side` = as.numeric(Rap.ReleaseSide),
+    ReleaseSide.Delta = as.numeric(ReleaseSide.Delta),
+    `TM Port x0` = as.numeric(Comp.x0),
+    `Rap x0` = as.numeric(Rap.x0),
+    x0.Delta = as.numeric(x0.Delta),
+    `TM Port y0` = as.numeric(Comp.y0),
+    `Rap y0` = as.numeric(Rap.y0),
+    y0.Delta = as.numeric(y0.Delta),
+    `TM Port z0` = as.numeric(Comp.z0),
+    `Rap z0` = as.numeric(Rap.z0),
+    z0.Delta = as.numeric(z0.Delta),
+    `TM Port vx0` = as.numeric(Comp.vx0),
+    `Rap vx0` = as.numeric(Rap.vx0),
+    vx0.Delta = as.numeric(vx0.Delta),
+    `TM Port vy0` = as.numeric(Comp.vy0),
+    `Rap vy0` = as.numeric(Rap.vy0),
+    vy0.Delta = as.numeric(vy0.Delta),
+    `TM Port vz0` = as.numeric(Comp.vz0),
+    `Rap vz0` = as.numeric(Rap.vz0),
+    vz0.Delta = as.numeric(vz0.Delta),
+    `TM Port ax0` = as.numeric(Comp.ax0),
+    `Rap ax0` = as.numeric(Rap.ax0),
+    ax0.Delta = as.numeric(ax0.Delta),
+    `TM Port ay0` = as.numeric(Comp.ay0),
+    `Rap ay0` = as.numeric(Rap.ay0),
+    ay0.Delta = as.numeric(ay0.Delta),
+    `TM Port az0` = as.numeric(Comp.az0),
+    `Rap az0` = as.numeric(Rap.az0),
+    az0.Delta = as.numeric(az0.Delta)
+)
+
+comp_summary <- comp_data_num %>% select(`TM Port Speed`, `Rap Speed`, Speed.Delta, `TM Port Spin`, `Rap Spin`, Spin.Delta,`TM Port TVB`, `Rap TVB`, `TM Port THB`, `Rap THB`, `TM Port Hit Velo`,  `Rap Hit Velo`, `TM Port Hit Angle`, `Rap Hit Angle`, VB.Delta, `TM Port SZ Side`, `Rap SZ Side`, SZoneX.Delta, `TM Port SZ Height`, `Rap SZ Height`, SZoneY.Delta, HB.Delta,  `TM Port Hit Direction`, `Rap Hit Direction`, ExitDirection.Delta, ExitSpeed.Delta, ExitAngle.Delta,  `TM Port Spin X`, `Rap Spin X`, Spin.X.Delta, `TM Port Spin Y`, `Rap Spin Y`, Spin.Y.Delta,`TM Port Spin Z`, `Rap Spin Z`, Spin.Z.Delta, `TM Port Rel Height`, `Rap Rel Height`, ReleaseHeight.Delta, `TM Port Rel Extension`, `Rap Rel Extension`, ReleaseExtension.Delta, `TM Port Rel Side`, `Rap Rel Side`,  ReleaseSide.Delta, `TM Port x0`, `Rap x0`, x0.Delta, `TM Port y0`, `Rap y0`, y0.Delta, `TM Port z0`, `Rap z0`,  z0.Delta, `TM Port vx0`, `Rap vx0`, vx0.Delta, `TM Port vy0`, `Rap vy0`, vy0.Delta, `TM Port vz0`,`Rap vz0`,  vz0.Delta, `TM Port ax0`, `Rap ax0`, ax0.Delta, `TM Port ay0`, `Rap ay0`, ay0.Delta, `TM Port az0`,`Rap az0`, az0.Delta) 
+
+}
+
+if ("Hawk.Eye.Local.DateTime" %in% colnames(comp_data_nosummary)) { # relies on "Hawk.Eye.Local.DateTime" being the timestamp column name for HawkEye CSVs!! will have to be changed if this changes
+
+comp_data_num <- comp_data_nosummary %>% mutate(
+    `HawkEye Speed` = as.numeric(Comp.RelSpeed),
+    `Rap Speed` = as.numeric(Rap.TotalSpeedmph),
+    Speed.Delta = as.numeric(Speed.Delta),
+    `HawkEye Spin` = as.numeric(Comp.SpinRate),
+    `Rap Spin` = as.numeric(Rap.TotalSpin),
+    Spin.Delta = as.numeric(Spin.Delta),
+    `HawkEye TVB` = as.numeric(Comp.InducedVertBreak),
+    `Rap TVB` = as.numeric(Rap.VertBreakTrajectory),
+    `HawkEye THB` = as.numeric(Comp.HorzBreak),
+    `Rap THB` = as.numeric(Rap.HorzBreakTrajectory),
+    `HawkEye Hit Velo` = as.numeric(Comp.ExitSpeed),
+    `HawkEye Hit Angle` = as.numeric(Comp.Angle),
+    `Rap Hit Velo` = as.numeric(Rap.HitVelocity),
+    `Rap Hit Angle` = as.numeric(Rap.HitVertAngle),
+    VB.Delta = as.numeric(VB.Delta),
+    `HawkEye SZ Side` = as.numeric(Comp.SZSide),
+    `Rap SZ Side` = as.numeric(Rap.SZone.Side),
+    SZoneX.Delta = as.numeric(SZoneX.Delta),
+    `HawkEye SZ Height` = as.numeric(Comp.SZHeight),
+    `Rap SZ Height` = as.numeric(Rap.SZone.Height),
+    SZoneY.Delta = as.numeric(SZoneY.Delta),
+    HB.Delta = as.numeric(HB.Delta),
+    `HawkEye Hit Direction` = as.numeric(Comp.Direction),
+    `Rap Hit Direction` = as.numeric(Rap.Direction),
+    ExitDirection.Delta = as.numeric(ExitDirection.Delta),
+    ExitSpeed.Delta = as.numeric(ExitSpeed.Delta),
+    ExitAngle.Delta = as.numeric(ExitAngle.Delta),
+    `HawkEye Spin X` = as.numeric(Comp.SpinX),
+    `Rap Spin X` = as.numeric(Rap.Spin.X),
+    Spin.X.Delta = as.numeric(Spin.X.Delta),
+    `HawkEye Spin Y` = as.numeric(Comp.SpinY),
+    `Rap Spin Y` = as.numeric(Rap.Spin.Y), 
+    Spin.Y.Delta = as.numeric(Spin.Y.Delta),
+    `HawkEye Spin Z` = as.numeric(Comp.SpinZ),
+    `Rap Spin Z` = as.numeric(Rap.Spin.Z),
+    Spin.Z.Delta = as.numeric(Spin.Z.Delta),
+    `HawkEye Rel Height` = as.numeric(Comp.RelHeight),
+    `Rap Rel Height` = as.numeric(Rap.ReleaseHeight),
+    ReleaseHeight.Delta = as.numeric(ReleaseHeight.Delta),
+    `HawkEye Rel Extension` = as.numeric(Comp.RelExt),
+    `Rap Rel Extension` = as.numeric(Rap.ReleaseExtension),
+    ReleaseExtension.Delta = as.numeric(ReleaseExtension.Delta),
+    `HawkEye Rel Side` = as.numeric(Comp.RelSide),
+    `Rap Rel Side` = as.numeric(Rap.ReleaseSide),
+    ReleaseSide.Delta = as.numeric(ReleaseSide.Delta),
+    `HawkEye x0` = as.numeric(Comp.x0),
+    `Rap x0` = as.numeric(Rap.x0),
+    x0.Delta = as.numeric(x0.Delta),
+    `HawkEye y0` = as.numeric(Comp.y0),
+    `Rap y0` = as.numeric(Rap.y0),
+    y0.Delta = as.numeric(y0.Delta),
+    `HawkEye z0` = as.numeric(Comp.z0),
+    `Rap z0` = as.numeric(Rap.z0),
+    z0.Delta = as.numeric(z0.Delta),
+    `HawkEye vx0` = as.numeric(Comp.vx0),
+    `Rap vx0` = as.numeric(Rap.vx0),
+    vx0.Delta = as.numeric(vx0.Delta),
+    `HawkEye vy0` = as.numeric(Comp.vy0),
+    `Rap vy0` = as.numeric(Rap.vy0),
+    vy0.Delta = as.numeric(vy0.Delta),
+    `HawkEye vz0` = as.numeric(Comp.vz0),
+    `Rap vz0` = as.numeric(Rap.vz0),
+    vz0.Delta = as.numeric(vz0.Delta),
+    `HawkEye ax0` = as.numeric(Comp.ax0),
+    `Rap ax0` = as.numeric(Rap.ax0),
+    ax0.Delta = as.numeric(ax0.Delta),
+    `HawkEye ay0` = as.numeric(Comp.ay0),
+    `Rap ay0` = as.numeric(Rap.ay0),
+    ay0.Delta = as.numeric(ay0.Delta),
+    `HawkEye az0` = as.numeric(Comp.az0),
+    `Rap az0` = as.numeric(Rap.az0),
+    az0.Delta = as.numeric(az0.Delta)
+)
+
+comp_summary <- comp_data_num %>% select(`HawkEye Speed`, `Rap Speed`, Speed.Delta, `HawkEye Spin`, `Rap Spin`, Spin.Delta,`HawkEye TVB`, `Rap TVB`, `HawkEye THB`, `Rap THB`, `HawkEye Hit Velo`,  `Rap Hit Velo`, `HawkEye Hit Angle`, `Rap Hit Angle`, VB.Delta, `HawkEye SZ Side`, `Rap SZ Side`, SZoneX.Delta, `HawkEye SZ Height`, `Rap SZ Height`, SZoneY.Delta, HB.Delta,  `HawkEye Hit Direction`, `Rap Hit Direction`, ExitDirection.Delta, ExitSpeed.Delta, ExitAngle.Delta,   `HawkEye Spin X`, `Rap Spin X`, Spin.X.Delta, `HawkEye Spin Y`, `Rap Spin Y`, Spin.Y.Delta,`HawkEye Spin Z`, `Rap Spin Z`, Spin.Z.Delta, `HawkEye Rel Height`, `Rap Rel Height`, ReleaseHeight.Delta, `HawkEye Rel Extension`, `Rap Rel Extension`, ReleaseExtension.Delta, `HawkEye Rel Side`, `Rap Rel Side`,  ReleaseSide.Delta, `HawkEye x0`, `Rap x0`, x0.Delta, `HawkEye y0`, `Rap y0`, y0.Delta, `HawkEye z0`, `Rap z0`,  z0.Delta, `HawkEye vx0`, `Rap vx0`, vx0.Delta, `HawkEye vy0`, `Rap vy0`, vy0.Delta, `HawkEye vz0`,`Rap vz0`,  vz0.Delta, `HawkEye ax0`, `Rap ax0`, ax0.Delta, `HawkEye ay0`, `Rap ay0`, ay0.Delta, `HawkEye az0`,`Rap az0`, az0.Delta) 
+
+}
+    
+    comp_data_long_forbarplot <- 
+    pivot_longer(comp_summary, cols = c(`HawkEye Speed`, `Rap Speed`, Speed.Delta, `HawkEye Spin`, `Rap Spin`, Spin.Delta,`HawkEye TVB`, `Rap TVB`, `HawkEye THB`, `Rap THB`, `HawkEye Hit Velo`,  `Rap Hit Velo`, `HawkEye Hit Angle`, `Rap Hit Angle`, VB.Delta, `HawkEye SZ Side`, `Rap SZ Side`, SZoneX.Delta, `HawkEye SZ Height`, `Rap SZ Height`, SZoneY.Delta, HB.Delta,  `HawkEye Hit Direction`, `Rap Hit Direction`, ExitDirection.Delta, ExitSpeed.Delta, ExitAngle.Delta,   `HawkEye Spin X`, `Rap Spin X`, Spin.X.Delta, `HawkEye Spin Y`, `Rap Spin Y`, Spin.Y.Delta,`HawkEye Spin Z`, `Rap Spin Z`, Spin.Z.Delta, `HawkEye Rel Height`, `Rap Rel Height`, ReleaseHeight.Delta, `HawkEye Rel Extension`, `Rap Rel Extension`, ReleaseExtension.Delta, `HawkEye Rel Side`, `Rap Rel Side`,  ReleaseSide.Delta, `HawkEye x0`, `Rap x0`, x0.Delta, `HawkEye y0`, `Rap y0`, y0.Delta, `HawkEye z0`, `Rap z0`,  z0.Delta, `HawkEye vx0`, `Rap vx0`, vx0.Delta, `HawkEye vy0`, `Rap vy0`, vy0.Delta, `HawkEye vz0`,`Rap vz0`,  vz0.Delta, `HawkEye ax0`, `Rap ax0`, ax0.Delta, `HawkEye ay0`, `Rap ay0`, ay0.Delta, `HawkEye az0`,`Rap az0`, az0.Delta)
+)
+
+comp_data_long_barplot <- comp_data_long_forbarplot %>% group_by(name) %>% summarise(`Defect %` = 100*sum(is.na(value) | value == 0)/n()) # summarises what exactly makes a defect a defect
+
+comp_data_long_barplot <- comp_data_long_barplot %>% mutate(
+    Device = case_when(
+        str_detect(name, "TM Stad")~"TM Stad",
+        str_detect(name, "Rap")~"Rap",
+        str_detect(name, "TM Port")~"TM Port",
+        str_detect(name, "HawkEye")~"HawkEye"
+    )
+)
+
+comp_data_long_barplot <- comp_data_long_barplot %>% mutate(
+    Device = factor(Device, levels = c("Rap", "HawkEye", "TM Stad", "TM Port"))
+)
+
+})
+
+```
+
+### Bar Chart of Defect Rate by Measurement Type for Speed and Spin
+
+```{r bar chart defect rate by measurement type speed and spin manual}
+# code for creating reactive barplot of defect rates (chunks below are essentially the same, just specified for different metrics)
+
+renderPlot({
+    comp_data_long_barplot <- comp_data_long_barplot() # because it is reactive 
+    
+    comp_data_long_barplot %>% filter(
+    comp_data_long_barplot$name == "TM Port Speed" | comp_data_long_barplot$name == "TM Stad Speed" | comp_data_long_barplot$name ==  "Rap Speed" | comp_data_long_barplot$name ==  "TM Port Spin" |  comp_data_long_barplot$name ==  "TM Stad Spin" | comp_data_long_barplot$name ==  "Rap Spin" | comp_data_long_barplot$name == "HawkEye Speed" | comp_data_long_barplot$name == "HawkEye Spin"
+) %>% 
+    ggplot(., aes(x = name, y = `Defect %`, label = round(`Defect %`, 2), fill = Device)) +
+    geom_text(hjust = 0, vjust = 0) +
+    geom_bar(stat = "identity") +
+    labs(x = "Source and Measurement", title = "Defect % By Source and Measurement for Speed and Spin Metrics") +
+    ylim(0,100)
+})
+
+```
+
+
+
+
+### Bar Chart of Defect Rate by Measurement Type for Trajectory Horizontal and Vertical Break
+
+```{r bar chart defect rate by measurement type breaks by hand, echo = FALSE}
+
+renderPlot({
+    comp_data_long_barplot <- comp_data_long_barplot()
+    
+   
+    comp_data_long_barplot %>% filter(
+    comp_data_long_barplot$name == "TM Port TVB" | comp_data_long_barplot$name == "TM Stad TVB" | comp_data_long_barplot$name ==  "Rap TVB" | comp_data_long_barplot$name ==  "TM Port THB" | comp_data_long_barplot$name ==  "TM Stad THB" | comp_data_long_barplot$name ==  "Rap THB" | comp_data_long_barplot$name == "HawkEye TVB" | comp_data_long_barplot$name == "HawkEye THB") %>% 
+    ggplot(., aes(x = name, y = `Defect %`, label = round(`Defect %`, 2), fill = Device)) +
+    geom_bar(stat = "identity") +
+    geom_text(hjust = 0, vjust = 0) +
+    labs(x = "Source and Measurement", title = "Defect % By Source and Measurement for Trajectory Break Metrics") +
+    ylim(0,100)
+})
+
+```
+
+### Bar Chart of Defect Rate by Measurement Type for Release Height, Side, and Extension
+
+```{r bar chart defect rate by measurement type rel height side and ext by hand, echo = FALSE}
+
+renderPlot({
+    comp_data_long_barplot <- comp_data_long_barplot()
+    
+    comp_data_long_barplot %>% filter(
+    comp_data_long_barplot$name == "TM Port Rel Height" | comp_data_long_barplot$name == "TM Stad Rel Height" | comp_data_long_barplot$name ==  "Rap Rel Height" | comp_data_long_barplot$name ==  "TM Port Rel Side" | comp_data_long_barplot$name ==  "TM Stad Rel Side" | comp_data_long_barplot$name ==  "Rap Rel Side" | comp_data_long_barplot$name == "HawkEye Rel Side" | comp_data_long_barplot$name == "HawkEye Rel Height" | comp_data_long_barplot$name == "TM Stad Rel Extension" | comp_data_long_barplot$name == "TM Port Rel Extension" | comp_data_long_barplot$name == "Rap Rel Extension" | comp_data_long_barplot$name == "HawkEye Rel Extension") %>% 
+    ggplot(., aes(x = name, y = `Defect %`, label = round(`Defect %`, 2), fill = Device)) +
+    geom_bar(stat = "identity") +
+    geom_text(hjust = 0, vjust = 0) +
+    labs(x = "Source and Measurement", title = "Defect % By Source and Measurement for Release Height, Side, and Extension Metrics") +
+    ylim(0,100)
+})
+
+```
+
+### Bar Chart of Defect Rate by Measurement Type for x0, y0, and z0 Position
+
+```{r bar chart defect rate by measurement type x y and z pos by hand, echo = FALSE}
+
+renderPlot({
+    comp_data_long_barplot <- comp_data_long_barplot()
+    
+    comp_data_long_barplot %>% filter(
+    comp_data_long_barplot$name == "TM Port x0" | comp_data_long_barplot$name == "TM Stad x0" | comp_data_long_barplot$name ==  "Rap x0" | comp_data_long_barplot$name ==  "TM Port y0" | comp_data_long_barplot$name ==  "TM Stad y0" | comp_data_long_barplot$name ==  "Rap y0" | comp_data_long_barplot$name == "HawkEye x0" | comp_data_long_barplot$name == "HawkEye y0" | comp_data_long_barplot$name == "TM Stad z0" | comp_data_long_barplot$name == "TM Port z0" | comp_data_long_barplot$name == "Rap z0" | comp_data_long_barplot$name == "HawkEye z0") %>% 
+    ggplot(., aes(x = name, y = `Defect %`, label = round(`Defect %`, 2), fill = Device)) +
+    geom_bar(stat = "identity") +
+    geom_text(hjust = 0, vjust = 0) +
+    labs(x = "Source and Measurement", title = "Defect % By Source and Measurement for x0, y0, and z0 Position Metrics") +
+    ylim(0,100)
+})
+
+```
+
+Column {data-width=500}
+-------------------------------------------------
+
+### Bar Chart of Defect Rate by Measurement Type for Strike Zone Side (X-Location) and Height (Y-Location)
+
+```{r bar chart defect rate by measurement type szside and szheight by hand, echo = FALSE}
+
+renderPlot({
+    comp_data_long_barplot <- comp_data_long_barplot()
+    
+    comp_data_long_barplot %>% filter(
+    comp_data_long_barplot$name == "TM Port SZ Side" | comp_data_long_barplot$name == "TM Stad SZ Side" | comp_data_long_barplot$name ==  "Rap SZ Side" | comp_data_long_barplot$name ==  "TM Port SZ Height" | comp_data_long_barplot$name ==  "TM Stad SZ Height" | comp_data_long_barplot$name ==  "Rap SZ Height" | comp_data_long_barplot$name == "HawkEye SZ Side" | comp_data_long_barplot$name == "HawkEye SZ Height") %>% 
+    ggplot(., aes(x = name, y = `Defect %`, label = round(`Defect %`, 2), fill = Device)) +
+    geom_bar(stat = "identity") +
+    geom_text(hjust = 0, vjust = 0) +
+    labs(x = "Source and Measurement", title = "Defect % By Source and Measurement for SZ Side (X) and Height (Y) Metrics") +
+    ylim(0,100)
+})
+
+```
+
+
+
+
+### Bar Chart of Defect Rate by Measurement Type for Spin X, Spin Y, and Spin Z
+
+```{r bar chart defect rate by measurement type spinx spiny and spinz by hand, echo = FALSE}
+
+renderPlot({
+    comp_data_long_barplot <- comp_data_long_barplot()
+    
+    comp_data_long_barplot %>% filter(
+    comp_data_long_barplot$name == "TM Port Spin X" | comp_data_long_barplot$name == "TM Stad Spin X" | comp_data_long_barplot$name ==  "Rap Spin X" | comp_data_long_barplot$name ==  "TM Port Spin Y" | comp_data_long_barplot$name ==  "TM Stad Spin Y" | comp_data_long_barplot$name ==  "Rap Spin Y" | comp_data_long_barplot$name == "HawkEye Spin X" | comp_data_long_barplot$name == "HawkEye Spin Y" | comp_data_long_barplot$name == "TM Stad Spin Z" | comp_data_long_barplot$name == "TM Port Spin Z" | comp_data_long_barplot$name == "Rap Spin Z" | comp_data_long_barplot$name == "HawkEye Spin Z") %>% 
+    ggplot(., aes(x = name, y = `Defect %`, label = round(`Defect %`, 2), fill = Device)) +
+    geom_bar(stat = "identity") +
+    geom_text(hjust = 0, vjust = 0) +
+    labs(x = "Source and Measurement", title = "Defect % By Source and Measurement for Spin X, Spin Y, and Spin Z Metrics") +
+    ylim(0,100)
+})
+
+```
+
+### Bar Chart of Defect Rate by Measurement Type for x0, y0, and z0 Velocity
+
+```{r bar chart defect rate by measurement type x y and z velo by hand, echo = FALSE}
+
+renderPlot({
+    comp_data_long_barplot <- comp_data_long_barplot()
+    
+    comp_data_long_barplot %>% filter(
+    comp_data_long_barplot$name == "TM Port vx0" | comp_data_long_barplot$name == "TM Stad vx0" | comp_data_long_barplot$name ==  "Rap vx0" | comp_data_long_barplot$name ==  "TM Port vy0" | comp_data_long_barplot$name ==  "TM Stad vy0" | comp_data_long_barplot$name ==  "Rap vy0" | comp_data_long_barplot$name == "HawkEye vx0" | comp_data_long_barplot$name == "HawkEye vy0" | comp_data_long_barplot$name == "TM Stad vz0" | comp_data_long_barplot$name == "TM Port vz0" | comp_data_long_barplot$name == "Rap vz0" | comp_data_long_barplot$name == "HawkEye vz0") %>% 
+    ggplot(., aes(x = name, y = `Defect %`, label = round(`Defect %`, 2), fill = Device)) +
+    geom_bar(stat = "identity") +
+    geom_text(hjust = 0, vjust = 0) +
+    labs(x = "Source and Measurement", title = "Defect % By Source and Measurement for x0, y0, and z0 Velocity Metrics") +
+    ylim(0,100)
+})
+
+```
+
+### Bar Chart of Defect Rate by Measurement Type for x0, y0, and z0 Acceleration
+
+```{r bar chart defect rate by measurement type x y and z accel by hand, echo = FALSE}
+
+renderPlot({
+    comp_data_long_barplot <- comp_data_long_barplot()
+
+    comp_data_long_barplot %>% filter(
+    comp_data_long_barplot$name == "TM Port ax0" | comp_data_long_barplot$name == "TM Stad ax0" | comp_data_long_barplot$name ==  "Rap ax0" | comp_data_long_barplot$name ==  "TM Port ay0" | comp_data_long_barplot$name ==  "TM Stad ay0" | comp_data_long_barplot$name ==  "Rap ay0" | comp_data_long_barplot$name == "HawkEye ax0" | comp_data_long_barplot$name == "HawkEye ay0" | comp_data_long_barplot$name == "TM Stad az0" | comp_data_long_barplot$name == "TM Port az0" | comp_data_long_barplot$name == "Rap az0" | comp_data_long_barplot$name == "HawkEye az0") %>% 
+    ggplot(., aes(x = name, y = `Defect %`, label = round(`Defect %`, 2), fill = Device)) +
+    geom_bar(stat = "identity") +
+    geom_text(hjust = 0, vjust = 0) +
+    labs(x = "Source and Measurement", title = "Defect % By Source and Measurement for x0, y0, and z0 Acceleration Metrics") +
+    ylim(0,100)
+})
+
+```
+
+
+
+### Bar Chart of Defect Rate by Measurement Type for Hit Exit Velocity, Angle, and Direction
+
+```{r bar chart defect rate by measurement type hit velo angle and dir by hand, echo = FALSE}
+
+renderPlot({
+    comp_data_long_barplot <- comp_data_long_barplot()
+    
+    comp_data_long_barplot %>% filter(
+    comp_data_long_barplot$name == "TM Port Hit Velo" | comp_data_long_barplot$name == "TM Stad Hit Velo" | comp_data_long_barplot$name ==  "Rap Hit Velo" | comp_data_long_barplot$name ==  "TM Port Hit Angle" | comp_data_long_barplot$name ==  "TM Stad Hit Angle" | comp_data_long_barplot$name ==  "Rap Hit Angle" | comp_data_long_barplot$name == "HawkEye Hit Velo" | comp_data_long_barplot$name == "HawkEye Hit Angle" | comp_data_long_barplot$name == "TM Stad Hit Direction" | comp_data_long_barplot$name == "TM Port Hit Direction" | comp_data_long_barplot$name == "Rap Hit Direction" | comp_data_long_barplot$name == "HawkEye Hit Direction") %>% 
+    ggplot(., aes(x = name, y = `Defect %`, label = round(`Defect %`, 2), fill = Device)) +
+    geom_bar(stat = "identity") +
+    geom_text(hjust = 0, vjust = 0) +
+    labs(x = "Source and Measurement", title = "Defect % By Source and Measurement for Hit Exit Velocity, Angle, and Direction Metrics") +
+    ylim(0,100)
+})
+
+```
+
+
+Averages and Defect Values {data-navmenu="Summary Tables"}
+==================================
+
+Column {data-width=1000}
+-------------------------------------------------
+
+```{r creating big sumstats table}
+## reactive code mutating data to create large summary stats table which is pulled from to create dashboard outputs (NOTE: this hand-calculates all averages, sds, and defects -- code to pull them directly from summary rows at bottom of merged CSVs is commented out at the bottom of this script)
+
+comp_data_sumstats <- reactive({
+    comp_data_nosummary <- comp_data_nosummary()
+
+comp_data_long_forsumstats <- 
+    pivot_longer(comp_data_nosummary, cols = c(Comp.RelSpeed, Rap.TotalSpeedmph, Speed.Delta, Comp.SpinRate, Rap.TotalSpin, Spin.Delta, Comp.InducedVertBreak, Rap.VertBreakTrajectory, VB.Delta, Comp.HorzBreak, Rap.HorzBreakTrajectory, HB.Delta, Comp.SZSide, Rap.SZSide, SZoneX.Delta, Comp.SZHeight, Rap.SZHeight, SZoneY.Delta, Comp.RelHeight, Rap.RelHeight, RelHeight.Delta, Comp.RelSide, Rap.RelSide, RelSide.Delta, Comp.RelExt, Rap.RelExt, RelExt.Delta, Comp.SpinX, Rap.SpinX, SpinX.Delta, Comp.SpinY, Rap.SpinY, SpinY.Delta, Comp.SpinZ, Rap.SpinZ, SpinZ.Delta, Comp.x0, Rap.x0, x0.Delta, Comp.y0, Rap.y0, y0.Delta, Comp.z0, Rap.z0, z0.Delta, Comp.vx0, Rap.vx0, vx0.Delta, Comp.vy0, Rap.vy0, vy0.Delta, Comp.vz0, Rap.vz0, vz0.Delta, Comp.ax0, Rap.ax0, ax0.Delta, Comp.ay0, Rap.ay0, ay0.Delta, Comp.az0, Rap.az0, az0.Delta, Comp.ExitSpeed, Rap.HitVelocity, ExitSpeed.Delta, Comp.Angle, Rap.HitVertAngle, ExitAngle.Delta, Comp.Direction, Rap.Direction, ExitDirection.Delta)
+)
+
+comp_data_long_sumstats <- comp_data_long_forsumstats %>% group_by(name) %>% summarise(mean = mean(value, na.rm = T), mean80perc = mean(value[value < quantile(value, probs = 0.9, na.rm=T) & value>quantile(value, probs = 0.1, na.rm = T)], na.rm=T), sd = sd(value, na.rm = T), defects = sum(is.na(value) | value == 0), opportunities = n(), defectperc = 100*sum(is.na(value) | value == 0)/n()) # the "defects" and "defectperc" codes define what makes a defect a defect (if it's NA or = 0)
+
+comp_data_sumstats <- data.frame(t(comp_data_long_sumstats[-1]))
+
+Measurement <- c("Overall Average", "Middle 80% Average", "Overall Standard Deviation", "Defects", "Opportunities", "Defect %")
+
+colnames2 <- c(comp_data_long_sumstats$name, "Measurement")
+
+comp_data_sumstats <- cbind(comp_data_sumstats, Measurement)
+
+setNames(comp_data_sumstats, colnames2)
+
+})
+
+```
+
+```{r printing table to test}
+# renderTable({
+#     comp_data_sumstats <- comp_data_sumstats()
+#     head(comp_data_sumstats)
+# })
+
+```
+
+### Pitch Metric Summary Table: Spin and Speed Averages and Defects
+
+```{r pitch metric manual spin and speed avg and defect summary table}
+## pulls speed and spin columns from summary table and prints them with more descriptive column names (next chunks do the same with different metrics)
+
+renderTable({
+     comp_data_sumstats <- comp_data_sumstats()
+    
+    comp_data_sumstats %>% select(Measurement, Comp.RelSpeed, Rap.TotalSpeedmph, Speed.Delta, Comp.SpinRate, Rap.TotalSpin, Spin.Delta)  %>% rename(Measurement = Measurement, `Comp Speed (mph)` = Comp.RelSpeed, `Rap Speed (mph)` = Rap.TotalSpeedmph, `Speed Delta` = Speed.Delta, `Comp Spin (rpm)` = Comp.SpinRate, `Rap Spin (rpm)` = Rap.TotalSpin, `Spin Delta` = Spin.Delta) 
+})
+
+```
+
+### Pitch Metric Summary Table: Trajectory Horizontal and Vertical Break Averages and Defects
+
+```{r pitch metric manual tvb and thb avg and defect summary table}
+
+renderTable({
+     comp_data_sumstats <- comp_data_sumstats()
+    
+    comp_data_sumstats %>% select(Measurement, Comp.InducedVertBreak, Rap.VertBreakTrajectory, VB.Delta, Comp.HorzBreak, Rap.HorzBreakTrajectory, HB.Delta)  %>% rename(Measurement = Measurement, `Comp Trajectory VB (in)` = Comp.InducedVertBreak, `Rap Trajectory VB (in)` = Rap.VertBreakTrajectory, `VB Delta` = VB.Delta, `Comp Trajectory HB (in)` = Comp.HorzBreak, `Rap Trajectory HB (in)` = Rap.HorzBreakTrajectory, `HB Delta` = HB.Delta) 
+})
+
+```
+
+
+### Pitch Metric Summary Table: SZSide (X-Location) and Height (Y-Location) Averages and Defects
+
+```{r pitch metric manual szside and szheight avg and defect summary table}
+
+renderTable({
+     comp_data_sumstats <- comp_data_sumstats()
+    
+    comp_data_sumstats %>% select(Measurement, Comp.SZSide, Rap.SZSide, SZoneX.Delta, Comp.SZHeight, Rap.SZHeight, SZoneY.Delta)  %>% rename(Measurement = Measurement, `Comp SZ Side (in)` = Comp.SZSide, `Rap SZ Side (in)` = Rap.SZSide, `SZ Side Delta` = SZoneX.Delta, `Comp SZ Height (in)` = Comp.SZHeight, `Rap SZ Height (in)` = Rap.SZHeight, `SZ Height Delta` = SZoneY.Delta) 
+})
+
+```
+
+### Pitch Metric Summary Table: Release Height, Side, and Extension Averages and Defects
+
+```{r pitch metric manual relheihgt relside and relext avg and defect summary table}
+
+renderTable({
+     comp_data_sumstats <- comp_data_sumstats()
+    
+    comp_data_sumstats %>% select(Measurement, Comp.RelHeight, Rap.RelHeight, RelHeight.Delta, Comp.RelSide, Rap.RelSide, RelSide.Delta, Comp.RelExt, Rap.RelExt, RelExt.Delta)  %>% rename(Measurement = Measurement, `Comp Rel Height (ft)` = Comp.RelHeight, `Rap Rel Height  (ft)` = Rap.RelHeight, `Rel Height Delta` = RelHeight.Delta, `Comp Rel Side (ft)` = Comp.RelSide, `Rap Rel Side (ft)` = Rap.RelSide, `Rel Side Delta` = RelSide.Delta, `Comp Rel Extension (ft)` = Comp.RelExt, `Rap Rel Extension (ft)` = Rap.RelExt, `Rel Ext Delta` = RelExt.Delta) 
+})
+
+```
+
+### Pitch Metric Summary Table: Spin X, Spin Y, and Spin Z Averages and Defects
+
+```{r pitch metric manual spinx spiny and spinz avg and defect summary table}
+
+renderTable({
+     comp_data_sumstats <- comp_data_sumstats()
+    
+    comp_data_sumstats %>% select(Measurement, Comp.SpinX, Rap.SpinX, SpinX.Delta, Comp.SpinY, Rap.SpinY, SpinY.Delta, Comp.SpinZ, Rap.SpinZ, SpinZ.Delta)  %>% rename(Measurement = Measurement, `Comp Spin X` = Comp.SpinX, `Rap Spin X` = Rap.SpinX, `Spin X Delta` = SpinX.Delta, `Comp Spin Y` = Comp.SpinY, `Rap Spin Y` = Rap.SpinY, `Spin Y Delta` = SpinY.Delta, `Comp Spin Z` = Comp.SpinZ, `Rap Spin Z` = Rap.SpinZ, `Spin Z Delta` = SpinZ.Delta) 
+})
+
+```
+
+
+### Pitch Metric Summary Table: x0, y0, and z0 Averages and Defects
+
+```{r pitch metric manual x0 y0 and z0 avg and defect summary table}
+
+renderTable({
+     comp_data_sumstats <- comp_data_sumstats()
+    
+    comp_data_sumstats %>% select(Measurement, Comp.x0, Rap.x0, x0.Delta, Comp.y0, Rap.y0, y0.Delta, Comp.z0, Rap.z0, z0.Delta)  %>% rename(Measurement = Measurement, `Comp x0 (ft)` = Comp.x0, `Rap x0 (ft)` = Rap.x0, `x0 Delta` = x0.Delta, `Comp y0 (ft)` = Comp.y0, `Rap y0 (ft)` = Rap.y0, `y0 Delta` = y0.Delta, `Comp z0 (ft)` = Comp.z0, `Rap z0 (ft)` = Rap.z0, `z0 Delta` = z0.Delta) 
+})
+
+```
+
+### Pitch Metric Summary Table: Vx0, Vy0, and Vz0 Averages and Defects
+
+```{r pitch metric manual vx0 vy0 and vz0 avg and defect summary table}
+
+renderTable({
+     comp_data_sumstats <- comp_data_sumstats()
+    
+    comp_data_sumstats %>% select(Measurement, Comp.vx0, Rap.vx0, vx0.Delta, Comp.vy0, Rap.vy0, vy0.Delta, Comp.vz0, Rap.vz0, vz0.Delta)  %>% rename(Measurement = Measurement, `Comp Vx0` = Comp.vx0, `Rap Vx0` = Rap.vx0, `Vx0 Delta` = vx0.Delta, `Comp Vy0` = Comp.vy0, `Rap Vy0` = Rap.vy0, `Vy0 Delta` = vy0.Delta, `Comp Vz0` = Comp.vz0, `Rap Vz0` = Rap.vz0, `Vz0 Delta` = vz0.Delta) 
+})
+
+```
+
+### Pitch Metric Summary Table: Ax0, Ay0, and Az0 Averages and Defects
+
+```{r pitch metric manual ax0 ay0 and az0 avg and defect summary table}
+
+renderTable({
+     comp_data_sumstats <- comp_data_sumstats()
+    
+    comp_data_sumstats %>% select(Measurement, Comp.ax0, Rap.ax0, ax0.Delta, Comp.ay0, Rap.ay0, ay0.Delta, Comp.az0, Rap.az0, az0.Delta)  %>% rename(Measurement = Measurement, `Comp Ax0` = Comp.ax0, `Rap Ax0` = Rap.ax0, `Ax0 Delta` = ax0.Delta, `Comp Ay0` = Comp.ay0, `Rap Ay0` = Rap.ay0, `Ay0 Delta` = ay0.Delta, `Comp Az0` = Comp.az0, `Rap Az0` = Rap.az0, `Az0 Delta` = az0.Delta) 
+})
+
+```
+
+### Hit Metric Summary Table: Exit Velocity, Angle, and Direction Averages and Defects
+
+```{r hit metric manual avg and defect summary table}
+
+renderTable({
+     comp_data_sumstats <- comp_data_sumstats()
+    
+    comp_data_sumstats %>% select(Measurement, Comp.ExitSpeed, Rap.HitVelocity, ExitSpeed.Delta, Comp.Angle, Rap.HitVertAngle, ExitAngle.Delta, Comp.Direction, Rap.Direction, ExitDirection.Delta)  %>% rename(Measurement = Measurement, `Comp Hit Exit Velo` = Comp.ExitSpeed, `Rap Hit Exit Velo` = Rap.HitVelocity, `Hit Exit Velo Delta` = ExitSpeed.Delta, `Comp Hit Angle` = Comp.Angle, `Rap Hit Angle` = Rap.HitVertAngle, `Hit Angle Delta` = ExitAngle.Delta, `Comp Hit Direction` = Comp.Direction, `Rap Hit Direction` = Rap.Direction, `Hit Direction Delta` = ExitDirection.Delta) 
+})
+
+```
+
+Delta Range Values by Metric {data-navmenu="Summary Tables"}
+==================================
+
+Column {data-width=1000}
+-------------------------------------------------
+
+```{r creating dataframe with just delta values and summarizing, include = FALSE}
+# this code subsets the data to only include the delta values (absolute difference between Rapsodo and competitor device)
+
+comp_data_delta_ranges <- reactive({
+    comp_data_nosummary <- comp_data_nosummary()
+    
+    comp_data_deltas <- comp_data_nosummary %>% select(Speed.Delta, Spin.Delta, VB.Delta, HB.Delta, SZoneX.Delta, SZoneY.Delta, ExitDirection.Delta, ExitSpeed.Delta, ExitAngle.Delta, Spin.X.Delta, Spin.Y.Delta, Spin.Z.Delta, ReleaseHeight.Delta, ReleaseExtension.Delta, ReleaseSide.Delta, x0.Delta, y0.Delta, z0.Delta, vx0.Delta, vy0.Delta, vz0.Delta, ax0.Delta, ay0.Delta, az0.Delta)
+
+# THESE ARE PLACEHOLDER NUMBERS UNTIL CASEY SENDS ACTUAL NUMBERS!!!
+    # creates vector with the total number of deltas within the goal range for each metric (IF THE GOAL RANGE CHANGES -- want to be within 1.5 mph instead of 1 mph for example -- THESE WILL NEED TO BE CHANGED)
+`Deltas Within Range` <- c(sum(comp_data_deltas$Speed.Delta <= 1, na.rm = T), sum(comp_data_deltas$Spin.Delta <= 100, na.rm = T), sum(comp_data_deltas$VB.Delta <= 1, na.rm = T), sum(comp_data_deltas$HB.Delta <= 1, na.rm = T), sum(comp_data_deltas$SZoneX.Delta <= 1, na.rm = T), sum(comp_data_deltas$SZoneY.Delta <= 1, na.rm = T), sum(comp_data_deltas$ExitDirection.Delta <= 1, na.rm = T), sum(comp_data_deltas$ExitSpeed.Delta <= 1, na.rm = T), sum(comp_data_deltas$ExitAngle.Delta <= 1, na.rm = T), sum(comp_data_deltas$Spin.X.Delta <= 100, na.rm = T), sum(comp_data_deltas$Spin.Y.Delta <= 100, na.rm = T), sum(comp_data_deltas$Spin.Z.Delta <= 100, na.rm = T), sum(comp_data_deltas$ReleaseHeight.Delta <= 1, na.rm = T), sum(comp_data_deltas$ReleseExtension.Delta <= 1, na.rm = T), sum(comp_data_deltas$ReleaseSide.Delta <= 1, na.rm = T), sum(comp_data_deltas$x0.Delta <= 1, na.rm = T), sum(comp_data_deltas$y0.Delta <= 1, na.rm = T), sum(comp_data_deltas$z0.Delta <= 1, na.rm = T), sum(comp_data_deltas$vx0.Delta <= 1, na.rm = T), sum(comp_data_deltas$vy0.Delta <= 1, na.rm = T), sum(comp_data_deltas$vz0.Delta <= 1, na.rm = T), sum(comp_data_deltas$ax0.Delta <= 1, na.rm = T), sum(comp_data_deltas$ay0.Delta <= 1, na.rm = T), sum(comp_data_deltas$az0.Delta <= 1, na.rm = T))
+
+`Deltas Within Range` <- as.integer(`Deltas Within Range`)
+
+# gives total number of deltas able to be calculated (number of pitches with data from both devices)
+`Delta Opportunities` <- c(sum(!is.na(comp_data_deltas$Speed.Delta)), sum(!is.na(comp_data_deltas$Spin.Delta)), sum(!is.na(comp_data_deltas$VB.Delta)), sum(!is.na(comp_data_deltas$HB.Delta)), sum(!is.na(comp_data_deltas$SZoneX.Delta)), sum(!is.na(comp_data_deltas$SZoneY.Delta)), sum(!is.na(comp_data_deltas$ExitDirection.Delta)), sum(!is.na(comp_data_deltas$ExitSpeed.Delta)), sum(!is.na(comp_data_deltas$ExitAngle.Delta)), sum(!is.na(comp_data_deltas$Spin.X.Delta)), sum(!is.na(comp_data_deltas$Spin.Y.Delta)), sum(!is.na(comp_data_deltas$Spin.Z.Delta)), sum(!is.na(comp_data_deltas$ReleaseHeight.Delta)), sum(!is.na(comp_data_deltas$ReleaseExtension.Delta)), sum(!is.na(comp_data_deltas$ReleaseSide.Delta)), sum(!is.na(comp_data_deltas$x0.Delta)), sum(!is.na(comp_data_deltas$y0.Delta)), sum(!is.na(comp_data_deltas$z0.Delta)), sum(!is.na(comp_data_deltas$vx0.Delta)), sum(!is.na(comp_data_deltas$vy0.Delta)), sum(!is.na(comp_data_deltas$vz0.Delta)), sum(!is.na(comp_data_deltas$ax0.Delta)), sum(!is.na(comp_data_deltas$ay0.Delta)), sum(!is.na(comp_data_deltas$az0.Delta)))
+
+`Delta Opportunities` <- as.integer(`Delta Opportunities`)
+# divides deltas within range by total number of deltas to get % wtihin range
+`% Delta in Range` <- round(100*`Deltas Within Range`/`Delta Opportunities`, 2)
+
+# binds all 3 vectors together as rows to create a dataframe
+comp_data_delta_ranges <- rbind((round(`Deltas Within Range`, 0)), (round(`Delta Opportunities`, 0)), `% Delta in Range`)
+
+measurement_ranges <- c("Total Deltas within Range", "Total Pitches Matched", "% of Deltas within Range")
+
+# defines column names to be added to new dataframe
+colnames3 <-  c("Speed Delta (mph)", "Spin Delta (rpm)", "Vertical Break Delta (in)", "Horizontal Break Delta (in)", "SZ Side Delta (in)", "SZ Height Delta (in)", "Exit Direction Delta", "Exit Speed Delta (mph)", "Exit Angle Delta", "Spin X Delta (rpm)", "Spin Y Delta (rpm)", "Spin Z Delta (rpm)", "Release Height Delta (ft)", "Release Extension Delta (ft)", "Release Side Delta (ft)", "x0 Position Delta (ft)", "y0 Position Delta (ft)", "z0 Position Delta (ft)", "x0 Velocity Delta (ft/s)", "y0 Velocity Delta (ft/s)", "z0 Velocity Delta (ft/s)", "x0 Acceleration Delta (ft/s/s)", "y0 Acceleration Delta (ft/s/s)", "z0 Acceleration Delta (ft/s/s)", "Measurements")
+
+comp_data_delta_ranges <- data.frame(comp_data_delta_ranges)
+
+# adds column giving row names which are printed in dashboard
+comp_data_delta_ranges <- cbind(comp_data_delta_ranges, measurement_ranges)
+
+# sets column names to dataframe
+comp_data_delta_ranges <- setNames(comp_data_delta_ranges, colnames3)
+
+})
+
+```
+
+
+### Pitch Metric Summary Table: Spin, Speed, Breaks, SZ Side, SZ Height, Release Side, Release Height, and Release Extension Delta Ranges
+
+```{r pitch metric manual spin speed break szside szheight relside relheight and relext delta range summary table}
+# code for rendering the table (NOTE: in order to add the colors to the table, a special type of table (gt) must be created, hence the render_gt code) -- it is still reactive
+render_gt({
+     comp_data_delta_ranges <- comp_data_delta_ranges()
+    #pulls columns (metrics) we want to look at in table
+    comp_data_delta_ranges %>% select(Measurements, `Speed Delta (mph)`, `Spin Delta (rpm)`, `Vertical Break Delta (in)`, `Horizontal Break Delta (in)`, `SZ Height Delta (in)`, `SZ Side Delta (in)`, `Release Height Delta (ft)`, `Release Side Delta (ft)`, `Release Extension Delta (ft)`)  %>%
+        gt() %>% # code colors the columns on a scale from red to green depending on their values which scale from 0-100 (to color the %s)
+        data_color(columns = c(`Speed Delta (mph)`, `Spin Delta (rpm)`, `Vertical Break Delta (in)`, `Horizontal Break Delta (in)`, `SZ Height Delta (in)`, `SZ Side Delta (in)`, `Release Height Delta (ft)`, `Release Side Delta (ft)`, `Release Extension Delta (ft)`),
+                   colors = scales::col_numeric(
+                       palette = c("red", "yellow", "green"),
+                       domain = c(0, 100)
+                    )) %>% # data_color() code colors all cells in the column, but we only care about the comparison of %s, this code removes color from 2 top rows (total within range and total opportunities)
+  tab_style(
+    location = cells_body(
+      columns = where(is.numeric),
+      rows = 1:2
+    ),
+    style = list(cell_text(color = "black"),
+                 cell_fill(color = "white"))
+  )
+})
+
+```
+
+### Pitch Metric Summary Table: Spin X, Spin Y, Spin Z, x0, y0, and z0 Position, x0, y0, and z0 Velocity, and x0, y0, and z0 Acceleration Delta Ranges
+
+```{r pitch metric manual spin x y z and x/y/z0 vx/vy/vz0 and az/ay/az0 delta range summary table}
+# same code for rendering colored gt table as above, just for different set of columns
+render_gt({
+    comp_data_delta_ranges <- comp_data_delta_ranges()
+    
+    comp_data_delta_ranges %>% select(Measurements,`Spin X Delta (rpm)`, `Spin Y Delta (rpm)`, `Spin Z Delta (rpm)`, `x0 Position Delta (ft)`, `y0 Position Delta (ft)`, `z0 Position Delta (ft)`, `x0 Velocity Delta (ft/s)`, `y0 Velocity Delta (ft/s)`, `z0 Velocity Delta (ft/s)`, `x0 Acceleration Delta (ft/s/s)`, `y0 Acceleration Delta (ft/s/s)`, `z0 Acceleration Delta (ft/s/s)`) %>%
+        gt() %>%
+        data_color(columns = c(`Spin X Delta (rpm)`, `Spin Y Delta (rpm)`, `Spin Z Delta (rpm)`, `x0 Position Delta (ft)`, `y0 Position Delta (ft)`, `z0 Position Delta (ft)`, `x0 Velocity Delta (ft/s)`, `y0 Velocity Delta (ft/s)`, `z0 Velocity Delta (ft/s)`, `x0 Acceleration Delta (ft/s/s)`, `y0 Acceleration Delta (ft/s/s)`, `z0 Acceleration Delta (ft/s/s)`),
+                   colors = scales::col_numeric(
+                       palette = c("green", "yellow", "red"),
+                       domain = c(0, 100)
+                    )) %>% 
+  tab_style(
+    location = cells_body(
+      columns = where(is.numeric),
+      rows = 1:2
+    ),
+    style = list(cell_text(color = "black"),
+                 cell_fill(color = "white"))
+  )
+})
+
+
+```
+
+
+### Hit Metric Summary Table: Exit Velocity, Direction, and Angle Delta Ranges
+
+```{r hit metric exitvelo direction and angle delta range summary table}
+# same code for rendering colored gt table as above, just for different set of columns
+
+render_gt({
+    comp_data_delta_ranges <- comp_data_delta_ranges()
+    
+    comp_data_delta_ranges %>% select(Measurements, `Exit Speed Delta (mph)`, `Exit Direction Delta`, `Exit Angle Delta`)  %>%
+        gt() %>%
+        data_color(columns = c(`Exit Speed Delta (mph)`, `Exit Direction Delta`, `Exit Angle Delta`),
+                   colors = scales::col_numeric(
+                       palette = c("green", "yellow", "red"),
+                       domain = c(0, 100)
+                    )) %>% 
+  tab_style(
+    location = cells_body(
+      columns = where(is.numeric),
+      rows = 1:2
+    ),
+    style = list(cell_text(color = "black"),
+                 cell_fill(color = "white"))
+  )
+})
+
+```
+
+
+
+
+
+
+
+
+<!-- ### the following code generates defect % barplots by re-printing exact values from CSV, the above code (not commented out) manually generates the defect % and barplots (above manual sumstat table code) -- to enable these to generate, uncomment by highlighting all code and hitting (ctrl + shift+ c) or (command + shift + c) -->
+
+<!-- Straight from CSV Defect % Barplots {data-navmenu="Defect Bar Charts"} -->
+<!-- ================================== -->
+
+<!-- Column{data-width=500} -->
+<!-- ------------------------------------------------- -->
+
+<!-- ```{r reactive compsummarylong change if pulling defectperc straight from csv} -->
+<!-- # have to mutate the original data -->
+
+<!-- comp_summary_long <- reactive ({ -->
+<!--     comp_data <- comp_data() -->
+
+<!--     if ("TM.UTCDateTime" %in% colnames(comp_data)) { -->
+<!--     comp_data <- comp_data %>% mutate(Comp.PitchTimeStamp = substr(TM.UTCDateTime, 1, 19), -->
+<!--     Comp.RelSpeed = (TM.RelSpeed), -->
+<!--     Comp.SpinRate = (TM.SpinRate), -->
+<!--     Comp.InducedVertBreak = (TM.InducedVertBreak), -->
+<!--     Comp.HorzBreak = (TM.HorzBreak), -->
+<!--     Comp.SZSide = (TM.SZone.Side), -->
+<!--     Comp.SZHeight = (TM.SZone.Height), -->
+<!--     Comp.ExitSpeed = (TM.ExitSpeed), -->
+<!--     Comp.Angle = (TM.Angle), -->
+<!--     Comp.Direction = (TM.Direction), -->
+<!--     Comp.SpinTilt = TM.Spin.Tilt, -->
+<!--     Comp.SpinX = (TM.Spin.X), -->
+<!--     Comp.SpinY = (TM.Spin.Y), -->
+<!--     Comp.SpinZ = (TM.Spin.Z), -->
+<!--     Comp.RelHeight = (TM.ReleaseHeight), -->
+<!--     Comp.RelExt = (TM.ReleaseExtension), -->
+<!--     Comp.RelSide = (TM.ReleaseSide), -->
+<!--     Comp.x0 = (TM.x0), -->
+<!--     Comp.y0 = (TM.y0), -->
+<!--     Comp.z0 = (TM.z0), -->
+<!--     Comp.vx0 = (TM.vx0), -->
+<!--     Comp.vy0 = (TM.vy0), -->
+<!--     Comp.vz0 = (TM.vz0), -->
+<!--     Comp.ax0 = (TM.ax0), -->
+<!--     Comp.ay0 = (TM.ay0), -->
+<!--     Comp.az0 = (TM.az0)) -->
+<!-- } -->
+
+<!-- if("TM.Local.DateTime" %in% colnames(comp_data)) { -->
+<!--     comp_data <- comp_data %>% mutate( -->
+<!--     Comp.RelSpeed = TM.RelSpeed, -->
+<!--     Comp.SpinRate = (TM.SpinRate), -->
+<!--     Comp.InducedVertBreak = (TM.InducedVertBreak), -->
+<!--     Comp.HorzBreak = (TM.HorzBreak), -->
+<!--     Comp.ExitSpeed = (TM.ExitSpeed), -->
+<!--     Comp.SZSide = (TM.SZone.Side), -->
+<!--     Comp.SZHeight = (TM.SZone.Height), -->
+<!--     Comp.Angle = (TM.Angle), -->
+<!--     Comp.Direction = (TM.Direction), -->
+<!--     Comp.SpinTilt = TM.Spin.Tilt, -->
+<!--     Comp.SpinX = (TM.Spin.X), -->
+<!--     Comp.SpinY = (TM.Spin.Y), -->
+<!--     Comp.SpinZ = (TM.Spin.Z), -->
+<!--     Comp.RelHeight = (TM.ReleaseHeight), -->
+<!--     Comp.RelExt = (TM.ReleaseExtension), -->
+<!--     Comp.RelSide = (TM.ReleaseSide), -->
+<!--     Comp.x0 = (TM.x0), -->
+<!--     Comp.y0 = (TM.y0), -->
+<!--     Comp.z0 = (TM.z0), -->
+<!--     Comp.vx0 = (TM.vx0), -->
+<!--     Comp.vy0 = (TM.vy0), -->
+<!--     Comp.vz0 = (TM.vz0), -->
+<!--     Comp.ax0 = (TM.ax0), -->
+<!--     Comp.ay0 = (TM.ay0), -->
+<!--     Comp.az0 = (TM.az0)) -->
+<!-- } -->
+
+<!-- if("Hawk.Eye.Local.DateTime" %in% colnames(comp_data)) { -->
+<!--     comp_data <- comp_data %>% mutate( -->
+<!--     Comp.RelSpeed = Hawk.Eye.RelSpeed, -->
+<!--     Comp.SpinRate = (Hawk.Eye.SpinRate), -->
+<!--     Comp.InducedVertBreak = (Hawk.Eye.InducedVertBreak), -->
+<!--     Comp.HorzBreak = (Hawk.Eye.HorzBreak), -->
+<!--     Comp.ExitSpeed = (Hawk.Eye.ExitSpeed), -->
+<!--     Comp.SZSide = (Hawk.Eye.SZone.Side), -->
+<!--     Comp.SZHeight = (Hawk.Eye.SZone.Height), -->
+<!--     Comp.Angle = (Hawk.Eye.Angle), -->
+<!--     Comp.Direction = (Hawk.Eye.Direction), -->
+<!--     Comp.SpinTilt = Hawk.Eye.Spin.Tilt, -->
+<!--     Comp.SpinX = (Hawk.Eye.Spin.X), -->
+<!--     Comp.SpinY = (Hawk.Eye.Spin.Y), -->
+<!--     Comp.SpinZ = (Hawk.Eye.Spin.Z), -->
+<!--     Comp.RelHeight = (Hawk.Eye.ReleaseHeight), -->
+<!--     Comp.RelExt = (Hawk.Eye.ReleaseExtension), -->
+<!--     Comp.RelSide = (Hawk.Eye.ReleaseSide), -->
+<!--     Comp.x0 = (Hawk.Eye.x0), -->
+<!--     Comp.y0 = (Hawk.Eye.y0), -->
+<!--     Comp.z0 = (Hawk.Eye.z0), -->
+<!--     Comp.vx0 = (Hawk.Eye.vx0), -->
+<!--     Comp.vy0 = (Hawk.Eye.vy0), -->
+<!--     Comp.vz0 = (Hawk.Eye.vz0), -->
+<!--     Comp.ax0 = (Hawk.Eye.ax0), -->
+<!--     Comp.ay0 = (Hawk.Eye.ay0), -->
+<!--     Comp.az0 = (Hawk.Eye.az0)) -->
+<!-- } -->
+
+<!--     comp_data_sum <- comp_data %>% mutate( -->
+<!--     Comp.RelSpeed = gsub("%", "", comp_data$Comp.RelSpeed), -->
+<!--     Rap.TotalSpeedmph = gsub("%", "", comp_data$Rap.TotalSpeed..mph.), -->
+<!--     Speed.Delta = gsub("%", "", comp_data$Speed.Delta), -->
+<!--     Comp.SpinRate = gsub("%", "", comp_data$Comp.SpinRate), -->
+<!--     Rap.TotalSpin = gsub("%", "", comp_data$Rap.TotalSpin), -->
+<!--     Spin.Delta = gsub("%", "", comp_data$Spin.Delta), -->
+<!--     Comp.InducedVertBreak = gsub("%", "", comp_data$Comp.InducedVertBreak), -->
+<!--     Rap.VertBreakTrajectory = gsub("%", "", comp_data$Rap.VertBreakTrajectory), -->
+<!--     VB.Delta = gsub("%", "", comp_data$VB.Delta), -->
+<!--     Comp.HorzBreak = gsub("%", "", comp_data$Comp.HorzBreak), -->
+<!--     Rap.HorzBreakTrajectory = gsub("%", "", comp_data$Rap.HorzBreakTrajectory), -->
+<!--     HB.Delta = gsub("%", "", comp_data$HB.Delta), -->
+<!--     Comp.ExitSpeed = gsub("%", "", comp_data$Comp.ExitSpeed), -->
+<!--     Comp.Angle = gsub("%", "", comp_data$Comp.Angle), -->
+<!--     Comp.Direction = gsub("%", "", comp_data$Comp.Direction), -->
+<!--     Rap.HitVelocity = gsub("%", "", comp_data$Rap.HitVelocity), -->
+<!--     Rap.HitVertAngle = gsub("%", "", comp_data$Rap.HitVertAngle), -->
+<!--     Rap.Direction = gsub("%", "", comp_data$Rap.Direction), -->
+<!--     ExitSpeed.Delta = gsub("%", "", comp_data$ExitSpeed.Delta), -->
+<!--     ExitAngle.Delta = gsub("%", "", comp_data$ExitAngle.Delta), -->
+<!--     ExitDirection.Delta = gsub("%", "", comp_data$ExitDirection.Delta), -->
+<!--     Comp.SZSide = gsub("%", "", comp_data$Comp.SZSide), -->
+<!--     Rap.SZone.Side = gsub("%", "", comp_data$Rap.SZone.Side), -->
+<!--     SZoneX.Delta = gsub("%", "", comp_data$SZoneX.Delta), -->
+<!--     Comp.SZHeight = gsub("%", "", comp_data$Comp.SZHeight), -->
+<!--     Rap.SZone.Height = gsub("%", "", comp_data$Rap.SZone.Height), -->
+<!--     SZoneY.Delta = gsub("%", "", comp_data$SZoneY.Delta), -->
+<!--     Comp.SpinTilt = gsub("%", "", comp_data$Comp.SpinTilt), -->
+<!--     Rap.Spin.Tilt = gsub("%", "", comp_data$Rap.Spin.Tilt), -->
+<!--     Comp.SpinX = gsub("%", "", comp_data$Comp.SpinX), -->
+<!--     Rap.Spin.X = gsub("%", "", comp_data$Rap.Spin.X), -->
+<!--     Spin.X.Delta = gsub("%", "", comp_data$Spin.X.Delta), -->
+<!--     Comp.SpinY = gsub("%", "", comp_data$Comp.SpinY), -->
+<!--     Rap.Spin.Y = gsub("%", "", comp_data$Rap.Spin.Y), -->
+<!--     Spin.Y.Delta = gsub("%", "", comp_data$Spin.Y.Delta), -->
+<!--     Comp.SpinZ = gsub("%", "", comp_data$Comp.SpinZ), -->
+<!--     Rap.Spin.Z = gsub("%", "", comp_data$Rap.Spin.Z), -->
+<!--     Spin.Z.Delta = gsub("%", "", comp_data$Spin.Z.Delta), -->
+<!--     Comp.RelHeight = gsub("%", "", comp_data$Comp.RelHeight), -->
+<!--     Rap.ReleaseHeight = gsub("%", "", comp_data$Rap.ReleaseHeight), -->
+<!--     ReleaseHeight.Delta = gsub("%", "", comp_data$ReleaseHeight.Delta), -->
+<!--     Comp.RelExt = gsub("%", "", comp_data$Comp.RelExt), -->
+<!--     Rap.ReleaseExtension = gsub("%", "", comp_data$Rap.ReleaseExtension), -->
+<!--     ReleaseExtension.Delta = gsub("%", "", comp_data$ReleaseExtension.Delta), -->
+<!--     Comp.RelSide = gsub("%", "", comp_data$Comp.RelSide), -->
+<!--     Rap.ReleaseSide = gsub("%", "", comp_data$Rap.ReleaseSide), -->
+<!--     ReleaseSide.Delta = gsub("%", "", comp_data$ReleaseSide.Delta), -->
+<!--     Comp.x0 = gsub("%", "", comp_data$Comp.x0), -->
+<!--     Rap.x0 = gsub("%", "", comp_data$Rap.x0), -->
+<!--     x0.Delta = gsub("%", "", comp_data$x0.Delta), -->
+<!--     Comp.y0 = gsub("%", "", comp_data$Comp.y0), -->
+<!--     Rap.y0 = gsub("%", "", comp_data$Rap.y0), -->
+<!--     y0.Delta = gsub("%", "", comp_data$y0.Delta), -->
+<!--     Comp.z0 = gsub("%", "", comp_data$Comp.z0), -->
+<!--     Rap.z0 = gsub("%", "", comp_data$Rap.z0), -->
+<!--     z0.Delta = gsub("%", "", comp_data$z0.Delta), -->
+<!--     Comp.vx0 = gsub("%", "", comp_data$Comp.vx0), -->
+<!--     Rap.vx0 = gsub("%", "", comp_data$Rap.vx0), -->
+<!--     vx0.Delta = gsub("%", "", comp_data$vx0.Delta), -->
+<!--     Comp.vy0 = gsub("%", "", comp_data$Comp.vy0), -->
+<!--     Rap.vy0 = gsub("%", "", comp_data$Rap.vy0), -->
+<!--     vy0.Delta = gsub("%", "", comp_data$vy0.Delta), -->
+<!--     Comp.vz0 = gsub("%", "", comp_data$Comp.vz0), -->
+<!--     Rap.vz0 = gsub("%", "", comp_data$Rap.vz0), -->
+<!--     vz0.Delta = gsub("%", "", comp_data$vz0.Delta), -->
+<!--     Comp.ax0 = gsub("%", "", comp_data$Comp.ax0), -->
+<!--     Rap.ax0 = gsub("%", "", comp_data$Rap.ax0), -->
+<!--     ax0.Delta = gsub("%", "", comp_data$ax0.Delta), -->
+<!--     Comp.ay0 = gsub("%", "", comp_data$Comp.ay0), -->
+<!--     Rap.ay0 = gsub("%", "", comp_data$Rap.ay0), -->
+<!--     ay0.Delta = gsub("%", "", comp_data$ay0.Delta), -->
+<!--     Comp.az0 = gsub("%", "", comp_data$Comp.az0), -->
+<!--     Rap.az0 = gsub("%", "", comp_data$Rap.az0), -->
+<!--     az0.Delta = gsub("%", "", comp_data$az0.Delta)) -->
+
+<!-- if ("TM.UTCDateTime" %in% colnames(comp_data)) {comp_data_num <- comp_data_sum %>% mutate( -->
+<!--     `TM Stad Speed` = as.numeric(Comp.RelSpeed), -->
+<!--     `Rap Speed` = as.numeric(Rap.TotalSpeedmph), -->
+<!--     Speed.Delta = as.numeric(Speed.Delta), -->
+<!--     `TM Stad Spin` = as.numeric(Comp.SpinRate), -->
+<!--     `Rap Spin` = as.numeric(Rap.TotalSpin), -->
+<!--     Spin.Delta = as.numeric(Spin.Delta), -->
+<!--     `TM Stad TVB` = as.numeric(Comp.InducedVertBreak), -->
+<!--     `Rap TVB` = as.numeric(Rap.VertBreakTrajectory), -->
+<!--     `TM Stad THB` = as.numeric(Comp.HorzBreak), -->
+<!--     `Rap THB` = as.numeric(Rap.HorzBreakTrajectory), -->
+<!--     `TM Stad Hit Velo` = as.numeric(Comp.ExitSpeed), -->
+<!--     `TM Stad Hit Angle` = as.numeric(Comp.Angle), -->
+<!--     `Rap Hit Velo` = as.numeric(Rap.HitVelocity), -->
+<!--     `Rap Hit Angle` = as.numeric(Rap.HitVertAngle), -->
+<!--      VB.Delta = as.numeric(VB.Delta), -->
+<!--     `TM Stad SZ Side` = as.numeric(Comp.SZSide), -->
+<!--     `Rap SZ Side` = as.numeric(Rap.SZone.Side), -->
+<!--     SZoneX.Delta = as.numeric(SZoneX.Delta), -->
+<!--     `TM Stad SZ Height` = as.numeric(Comp.SZHeight), -->
+<!--     `Rap SZ Height` = as.numeric(Rap.SZone.Height), -->
+<!--     SZoneY.Delta = as.numeric(SZoneY.Delta), -->
+<!--     HB.Delta = as.numeric(HB.Delta), -->
+<!--     `TM Stad Hit Direction` = as.numeric(Comp.Direction), -->
+<!--     `Rap Hit Direction` = as.numeric(Rap.Direction), -->
+<!--     ExitDirection.Delta = as.numeric(ExitDirection.Delta), -->
+<!--     ExitSpeed.Delta = as.numeric(ExitSpeed.Delta), -->
+<!--     ExitAngle.Delta = as.numeric(ExitAngle.Delta), ## NEW COLUMNS START IN NEXT ROW -->
+<!--     `TM Stad Spin X` = as.numeric(Comp.SpinX), -->
+<!--     `Rap Spin X` = as.numeric(Rap.Spin.X), -->
+<!--     Spin.X.Delta = as.numeric(Spin.X.Delta), -->
+<!--     `TM Stad Spin Y` = as.numeric(Comp.SpinY), -->
+<!--     `Rap Spin Y` = as.numeric(Rap.Spin.Y),  -->
+<!--     Spin.Y.Delta = as.numeric(Spin.Y.Delta), -->
+<!--     `TM Stad Spin Z` = as.numeric(Comp.SpinZ), -->
+<!--     `Rap Spin Z` = as.numeric(Rap.Spin.Z), -->
+<!--     Spin.Z.Delta = as.numeric(Spin.Z.Delta), -->
+<!--     `TM Stad Rel Height` = as.numeric(Comp.RelHeight), -->
+<!--     `Rap Rel Height` = as.numeric(Rap.ReleaseHeight), -->
+<!--     ReleaseHeight.Delta = as.numeric(ReleaseHeight.Delta), -->
+<!--     `TM Stad Rel Extension` = as.numeric(Comp.RelExt), -->
+<!--     `Rap Rel Extension` = as.numeric(Rap.ReleaseExtension), -->
+<!--     ReleaseExtension.Delta = as.numeric(ReleaseExtension.Delta), -->
+<!--     `TM Stad Rel Side` = as.numeric(Comp.RelSide), -->
+<!--     `Rap Rel Side` = as.numeric(Rap.ReleaseSide), -->
+<!--     ReleaseSide.Delta = as.numeric(ReleaseSide.Delta), -->
+<!--     `TM Stad x0` = as.numeric(Comp.x0), -->
+<!--     `Rap x0` = as.numeric(Rap.x0), -->
+<!--     x0.Delta = as.numeric(x0.Delta), -->
+<!--     `TM Stad y0` = as.numeric(Comp.y0), -->
+<!--     `Rap y0` = as.numeric(Rap.y0), -->
+<!--     y0.Delta = as.numeric(y0.Delta), -->
+<!--     `TM Stad z0` = as.numeric(Comp.z0), -->
+<!--     `Rap z0` = as.numeric(Rap.z0), -->
+<!--     z0.Delta = as.numeric(z0.Delta), -->
+<!--     `TM Stad vx0` = as.numeric(Comp.vx0), -->
+<!--     `Rap vx0` = as.numeric(Rap.vx0), -->
+<!--     vx0.Delta = as.numeric(vx0.Delta), -->
+<!--     `TM Stad vy0` = as.numeric(Comp.vy0), -->
+<!--     `Rap vy0` = as.numeric(Rap.vy0), -->
+<!--     vy0.Delta = as.numeric(vy0.Delta), -->
+<!--     `TM Stad vz0` = as.numeric(Comp.vz0), -->
+<!--     `Rap vz0` = as.numeric(Rap.vz0), -->
+<!--     vz0.Delta = as.numeric(vz0.Delta), -->
+<!--     `TM Stad ax0` = as.numeric(Comp.ax0), -->
+<!--     `Rap ax0` = as.numeric(Rap.ax0), -->
+<!--     ax0.Delta = as.numeric(ax0.Delta), -->
+<!--     `TM Stad ay0` = as.numeric(Comp.ay0), -->
+<!--     `Rap ay0` = as.numeric(Rap.ay0), -->
+<!--     ay0.Delta = as.numeric(ay0.Delta), -->
+<!--     `TM Stad az0` = as.numeric(Comp.az0), -->
+<!--     `Rap az0` = as.numeric(Rap.az0), -->
+<!--     az0.Delta = as.numeric(az0.Delta)) -->
+
+<!-- comp_summary <- comp_data_num %>% select(PitchNo, `TM Stad Speed`, `Rap Speed`, Speed.Delta, `TM Stad Spin`, `Rap Spin`, Spin.Delta,`TM Stad TVB`, `Rap TVB`, `TM Stad THB`, `Rap THB`, `TM Stad Hit Velo`,  `Rap Hit Velo`, `TM Stad Hit Angle`, `Rap Hit Angle`, VB.Delta, `TM Stad SZ Side`, `Rap SZ Side`, SZoneX.Delta, `TM Stad SZ Height`, `Rap SZ Height`, SZoneY.Delta, HB.Delta, `TM Stad Hit Direction`, `Rap Hit Direction`, ExitDirection.Delta, ExitSpeed.Delta, ExitAngle.Delta, `TM Stad Spin X`, `Rap Spin X`, Spin.X.Delta, `TM Stad Spin Y`, `Rap Spin Y`, Spin.Y.Delta,`TM Stad Spin Z`, `Rap Spin Z`, Spin.Z.Delta, `TM Stad Rel Height`, `Rap Rel Height`, ReleaseHeight.Delta, `TM Stad Rel Extension`, `Rap Rel Extension`, ReleaseExtension.Delta, `TM Stad Rel Side`, `Rap Rel Side`,  ReleaseSide.Delta, `TM Stad x0`, `Rap x0`, x0.Delta, `TM Stad y0`, `Rap y0`, y0.Delta, `TM Stad z0`, `Rap z0`,  z0.Delta, `TM Stad vx0`, `Rap vx0`, vx0.Delta, `TM Stad vy0`, `Rap vy0`, vy0.Delta, `TM Stad vz0`,`Rap vz0`,  vz0.Delta, `TM Stad ax0`, `Rap ax0`, ax0.Delta, `TM Stad ay0`, `Rap ay0`, ay0.Delta, `TM Stad az0`,`Rap az0`, az0.Delta) %>% tail(6) -->
+<!-- } -->
+
+<!-- if ("TM.Local.DateTime" %in% colnames(comp_data)) {comp_data_num <- comp_data_sum %>% mutate( -->
+<!--     `TM Port Speed` = as.numeric(Comp.RelSpeed), -->
+<!--     `Rap Speed` = as.numeric(Rap.TotalSpeedmph), -->
+<!--     Speed.Delta = as.numeric(Speed.Delta), -->
+<!--     `TM Port Spin` = as.numeric(Comp.SpinRate), -->
+<!--     `Rap Spin` = as.numeric(Rap.TotalSpin), -->
+<!--     Spin.Delta = as.numeric(Spin.Delta), -->
+<!--     `TM Port TVB` = as.numeric(Comp.InducedVertBreak), -->
+<!--     `Rap TVB` = as.numeric(Rap.VertBreakTrajectory), -->
+<!--     `TM Port THB` = as.numeric(Comp.HorzBreak), -->
+<!--     `Rap THB` = as.numeric(Rap.HorzBreakTrajectory), -->
+<!--     `TM Port Hit Velo` = as.numeric(Comp.ExitSpeed), -->
+<!--     `TM Port Hit Angle` = as.numeric(Comp.Angle), -->
+<!--     `Rap Hit Velo` = as.numeric(Rap.HitVelocity), -->
+<!--     `Rap Hit Angle` = as.numeric(Rap.HitVertAngle), -->
+<!--      VB.Delta = as.numeric(VB.Delta), -->
+<!--     `TM Port SZ Side` = as.numeric(Comp.SZSide), # START HERE -->
+<!--     `Rap SZ Side` = as.numeric(Rap.SZone.Side), -->
+<!--     SZoneX.Delta = as.numeric(SZoneX.Delta), -->
+<!--     `TM Port SZ Height` = as.numeric(Comp.SZHeight), -->
+<!--     `Rap SZ Height` = as.numeric(Rap.SZone.Height), -->
+<!--     SZoneY.Delta = as.numeric(SZoneY.Delta), -->
+<!--     HB.Delta = as.numeric(HB.Delta), -->
+<!--     `TM Port Hit Direction` = as.numeric(Comp.Direction), -->
+<!--     `Rap Hit Direction` = as.numeric(Rap.Direction), -->
+<!--     ExitDirection.Delta = as.numeric(ExitDirection.Delta), -->
+<!--     ExitSpeed.Delta = as.numeric(ExitSpeed.Delta), -->
+<!--     ExitAngle.Delta = as.numeric(ExitAngle.Delta), -->
+<!--     `TM Port Spin X` = as.numeric(Comp.SpinX), -->
+<!--     `Rap Spin X` = as.numeric(Rap.Spin.X), -->
+<!--     Spin.X.Delta = as.numeric(Spin.X.Delta), -->
+<!--     `TM Port Spin Y` = as.numeric(Comp.SpinY), -->
+<!--     `Rap Spin Y` = as.numeric(Rap.Spin.Y),  -->
+<!--     Spin.Y.Delta = as.numeric(Spin.Y.Delta), -->
+<!--     `TM Port Spin Z` = as.numeric(Comp.SpinZ), -->
+<!--     `Rap Spin Z` = as.numeric(Rap.Spin.Z), -->
+<!--     Spin.Z.Delta = as.numeric(Spin.Z.Delta), -->
+<!--     `TM Port Rel Height` = as.numeric(Comp.RelHeight), -->
+<!--     `Rap Rel Height` = as.numeric(Rap.ReleaseHeight), -->
+<!--     ReleaseHeight.Delta = as.numeric(ReleaseHeight.Delta), -->
+<!--     `TM Port Rel Extension` = as.numeric(Comp.RelExt), -->
+<!--     `Rap Rel Extension` = as.numeric(Rap.ReleaseExtension), -->
+<!--     ReleaseExtension.Delta = as.numeric(ReleaseExtension.Delta), -->
+<!--     `TM Port Rel Side` = as.numeric(Comp.RelSide), -->
+<!--     `Rap Rel Side` = as.numeric(Rap.ReleaseSide), -->
+<!--     ReleaseSide.Delta = as.numeric(ReleaseSide.Delta), -->
+<!--     `TM Port x0` = as.numeric(Comp.x0), -->
+<!--     `Rap x0` = as.numeric(Rap.x0), -->
+<!--     x0.Delta = as.numeric(x0.Delta), -->
+<!--     `TM Port y0` = as.numeric(Comp.y0), -->
+<!--     `Rap y0` = as.numeric(Rap.y0), -->
+<!--     y0.Delta = as.numeric(y0.Delta), -->
+<!--     `TM Port z0` = as.numeric(Comp.z0), -->
+<!--     `Rap z0` = as.numeric(Rap.z0), -->
+<!--     z0.Delta = as.numeric(z0.Delta), -->
+<!--     `TM Port vx0` = as.numeric(Comp.vx0), -->
+<!--     `Rap vx0` = as.numeric(Rap.vx0), -->
+<!--     vx0.Delta = as.numeric(vx0.Delta), -->
+<!--     `TM Port vy0` = as.numeric(Comp.vy0), -->
+<!--     `Rap vy0` = as.numeric(Rap.vy0), -->
+<!--     vy0.Delta = as.numeric(vy0.Delta), -->
+<!--     `TM Port vz0` = as.numeric(Comp.vz0), -->
+<!--     `Rap vz0` = as.numeric(Rap.vz0), -->
+<!--     vz0.Delta = as.numeric(vz0.Delta), -->
+<!--     `TM Port ax0` = as.numeric(Comp.ax0), -->
+<!--     `Rap ax0` = as.numeric(Rap.ax0), -->
+<!--     ax0.Delta = as.numeric(ax0.Delta), -->
+<!--     `TM Port ay0` = as.numeric(Comp.ay0), -->
+<!--     `Rap ay0` = as.numeric(Rap.ay0), -->
+<!--     ay0.Delta = as.numeric(ay0.Delta), -->
+<!--     `TM Port az0` = as.numeric(Comp.az0), -->
+<!--     `Rap az0` = as.numeric(Rap.az0), -->
+<!--     az0.Delta = as.numeric(az0.Delta)) -->
+
+<!-- comp_summary <- comp_data_num %>% select(PitchNo, `TM Port Speed`, `Rap Speed`, Speed.Delta, `TM Port Spin`, `Rap Spin`, Spin.Delta,`TM Port TVB`, `Rap TVB`, `TM Port THB`, `Rap THB`, `TM Port Hit Velo`,  `Rap Hit Velo`, `TM Port Hit Angle`, `Rap Hit Angle`, VB.Delta, `TM Port SZ Side`, `Rap SZ Side`, SZoneX.Delta, `TM Port SZ Height`, `Rap SZ Height`, SZoneY.Delta, HB.Delta,  `TM Port Hit Direction`, `Rap Hit Direction`, ExitDirection.Delta, ExitSpeed.Delta, ExitAngle.Delta,  `TM Port Spin X`, `Rap Spin X`, Spin.X.Delta, `TM Port Spin Y`, `Rap Spin Y`, Spin.Y.Delta,`TM Port Spin Z`, `Rap Spin Z`, Spin.Z.Delta, `TM Port Rel Height`, `Rap Rel Height`, ReleaseHeight.Delta, `TM Port Rel Extension`, `Rap Rel Extension`, ReleaseExtension.Delta, `TM Port Rel Side`, `Rap Rel Side`,  ReleaseSide.Delta, `TM Port x0`, `Rap x0`, x0.Delta, `TM Port y0`, `Rap y0`, y0.Delta, `TM Port z0`, `Rap z0`,  z0.Delta, `TM Port vx0`, `Rap vx0`, vx0.Delta, `TM Port vy0`, `Rap vy0`, vy0.Delta, `TM Port vz0`,`Rap vz0`,  vz0.Delta, `TM Port ax0`, `Rap ax0`, ax0.Delta, `TM Port ay0`, `Rap ay0`, ay0.Delta, `TM Port az0`,`Rap az0`, az0.Delta) %>% tail(6) -->
+<!-- } -->
+
+<!-- if ("Hawk.Eye.Local.DateTime" %in% colnames(comp_data)) {comp_data_num <- comp_data_sum %>% mutate( -->
+<!--     `HawkEye Speed` = as.numeric(Comp.RelSpeed), -->
+<!--     `Rap Speed` = as.numeric(Rap.TotalSpeedmph), -->
+<!--     Speed.Delta = as.numeric(Speed.Delta), -->
+<!--     `HawkEye Spin` = as.numeric(Comp.SpinRate), -->
+<!--     `Rap Spin` = as.numeric(Rap.TotalSpin), -->
+<!--     Spin.Delta = as.numeric(Spin.Delta), -->
+<!--     `HawkEye TVB` = as.numeric(Comp.InducedVertBreak), -->
+<!--     `Rap TVB` = as.numeric(Rap.VertBreakTrajectory), -->
+<!--     `HawkEye THB` = as.numeric(Comp.HorzBreak), -->
+<!--     `Rap THB` = as.numeric(Rap.HorzBreakTrajectory), -->
+<!--     `HawkEye Hit Velo` = as.numeric(Comp.ExitSpeed), -->
+<!--     `HawkEye Hit Angle` = as.numeric(Comp.Angle), -->
+<!--     `Rap Hit Velo` = as.numeric(Rap.HitVelocity), -->
+<!--     `Rap Hit Angle` = as.numeric(Rap.HitVertAngle), -->
+<!--     VB.Delta = as.numeric(VB.Delta), -->
+<!--     `HawkEye SZ Side` = as.numeric(Comp.SZSide), -->
+<!--     `Rap SZ Side` = as.numeric(Rap.SZone.Side), -->
+<!--     SZoneX.Delta = as.numeric(SZoneX.Delta), -->
+<!--     `HawkEye SZ Height` = as.numeric(Comp.SZHeight), -->
+<!--     `Rap SZ Height` = as.numeric(Rap.SZone.Height), -->
+<!--     SZoneY.Delta = as.numeric(SZoneY.Delta), -->
+<!--     HB.Delta = as.numeric(HB.Delta), -->
+<!--     `HawkEye Hit Direction` = as.numeric(Comp.Direction), -->
+<!--     `Rap Hit Direction` = as.numeric(Rap.Direction), -->
+<!--     ExitDirection.Delta = as.numeric(ExitDirection.Delta), -->
+<!--     ExitSpeed.Delta = as.numeric(ExitSpeed.Delta), -->
+<!--     ExitAngle.Delta = as.numeric(ExitAngle.Delta), -->
+<!--     `HawkEye Spin X` = as.numeric(Comp.SpinX), -->
+<!--     `Rap Spin X` = as.numeric(Rap.Spin.X), -->
+<!--     Spin.X.Delta = as.numeric(Spin.X.Delta), -->
+<!--     `HawkEye Spin Y` = as.numeric(Comp.SpinY), -->
+<!--     `Rap Spin Y` = as.numeric(Rap.Spin.Y),  -->
+<!--     Spin.Y.Delta = as.numeric(Spin.Y.Delta), -->
+<!--     `HawkEye Spin Z` = as.numeric(Comp.SpinZ), -->
+<!--     `Rap Spin Z` = as.numeric(Rap.Spin.Z), -->
+<!--     Spin.Z.Delta = as.numeric(Spin.Z.Delta), -->
+<!--     `HawkEye Rel Height` = as.numeric(Comp.RelHeight), -->
+<!--     `Rap Rel Height` = as.numeric(Rap.ReleaseHeight), -->
+<!--     ReleaseHeight.Delta = as.numeric(ReleaseHeight.Delta), -->
+<!--     `HawkEye Rel Extension` = as.numeric(Comp.RelExt), -->
+<!--     `Rap Rel Extension` = as.numeric(Rap.ReleaseExtension), -->
+<!--     ReleaseExtension.Delta = as.numeric(ReleaseExtension.Delta), -->
+<!--     `HawkEye Rel Side` = as.numeric(Comp.RelSide), -->
+<!--     `Rap Rel Side` = as.numeric(Rap.ReleaseSide), -->
+<!--     ReleaseSide.Delta = as.numeric(ReleaseSide.Delta), -->
+<!--     `HawkEye x0` = as.numeric(Comp.x0), -->
+<!--     `Rap x0` = as.numeric(Rap.x0), -->
+<!--     x0.Delta = as.numeric(x0.Delta), -->
+<!--     `HawkEye y0` = as.numeric(Comp.y0), -->
+<!--     `Rap y0` = as.numeric(Rap.y0), -->
+<!--     y0.Delta = as.numeric(y0.Delta), -->
+<!--     `HawkEye z0` = as.numeric(Comp.z0), -->
+<!--     `Rap z0` = as.numeric(Rap.z0), -->
+<!--     z0.Delta = as.numeric(z0.Delta), -->
+<!--     `HawkEye vx0` = as.numeric(Comp.vx0), -->
+<!--     `Rap vx0` = as.numeric(Rap.vx0), -->
+<!--     vx0.Delta = as.numeric(vx0.Delta), -->
+<!--     `HawkEye vy0` = as.numeric(Comp.vy0), -->
+<!--     `Rap vy0` = as.numeric(Rap.vy0), -->
+<!--     vy0.Delta = as.numeric(vy0.Delta), -->
+<!--     `HawkEye vz0` = as.numeric(Comp.vz0), -->
+<!--     `Rap vz0` = as.numeric(Rap.vz0), -->
+<!--     vz0.Delta = as.numeric(vz0.Delta), -->
+<!--     `HawkEye ax0` = as.numeric(Comp.ax0), -->
+<!--     `Rap ax0` = as.numeric(Rap.ax0), -->
+<!--     ax0.Delta = as.numeric(ax0.Delta), -->
+<!--     `HawkEye ay0` = as.numeric(Comp.ay0), -->
+<!--     `Rap ay0` = as.numeric(Rap.ay0), -->
+<!--     ay0.Delta = as.numeric(ay0.Delta), -->
+<!--     `HawkEye az0` = as.numeric(Comp.az0), -->
+<!--     `Rap az0` = as.numeric(Rap.az0), -->
+<!--     az0.Delta = as.numeric(az0.Delta)) -->
+
+<!-- comp_summary <- comp_data_num %>% select(PitchNo, `HawkEye Speed`, `Rap Speed`, Speed.Delta, `HawkEye Spin`, `Rap Spin`, Spin.Delta,`HawkEye TVB`, `Rap TVB`, `HawkEye THB`, `Rap THB`, `HawkEye Hit Velo`,  `Rap Hit Velo`, `HawkEye Hit Angle`, `Rap Hit Angle`, VB.Delta, `HawkEye SZ Side`, `Rap SZ Side`, SZoneX.Delta, `HawkEye SZ Height`, `Rap SZ Height`, SZoneY.Delta, HB.Delta,  `HawkEye Hit Direction`, `Rap Hit Direction`, ExitDirection.Delta, ExitSpeed.Delta, ExitAngle.Delta,   `HawkEye Spin X`, `Rap Spin X`, Spin.X.Delta, `HawkEye Spin Y`, `Rap Spin Y`, Spin.Y.Delta,`HawkEye Spin Z`, `Rap Spin Z`, Spin.Z.Delta, `HawkEye Rel Height`, `Rap Rel Height`, ReleaseHeight.Delta, `HawkEye Rel Extension`, `Rap Rel Extension`, ReleaseExtension.Delta, `HawkEye Rel Side`, `Rap Rel Side`,  ReleaseSide.Delta, `HawkEye x0`, `Rap x0`, x0.Delta, `HawkEye y0`, `Rap y0`, y0.Delta, `HawkEye z0`, `Rap z0`,  z0.Delta, `HawkEye vx0`, `Rap vx0`, vx0.Delta, `HawkEye vy0`, `Rap vy0`, vy0.Delta, `HawkEye vz0`,`Rap vz0`,  vz0.Delta, `HawkEye ax0`, `Rap ax0`, ax0.Delta, `HawkEye ay0`, `Rap ay0`, ay0.Delta, `HawkEye az0`,`Rap az0`, az0.Delta) %>% tail(6) -->
+<!-- } -->
+
+<!-- comp_summary_long <- comp_summary %>% pivot_longer(!PitchNo, names_to = "Measurement", values_to = "values") -->
+
+<!-- comp_summary_long <- comp_summary_long %>% pivot_wider(names_from=PitchNo, values_from=values) -->
+
+<!-- comp_summary_long <- comp_summary_long %>% mutate( -->
+<!--     Device = case_when( -->
+<!--         str_detect(Measurement, "TM Stad")~"TM Stad", -->
+<!--         str_detect(Measurement, "Rap")~"Rap", -->
+<!--         str_detect(Measurement, "TM Port")~"TM Port", -->
+<!--         str_detect(Measurement, "HawkEye")~"HawkEye")) -->
+
+<!-- comp_summary_long <- comp_summary_long %>% mutate( -->
+<!--     Device = factor(Device, levels = c("Rap", "HawkEye", "TM Stad", "TM Port"))) -->
+
+<!-- }) -->
+
+<!-- ``` -->
+
+
+
+<!-- ### Bar Chart of Defect Rate by Measurement Type for Speed and Spin -->
+
+<!-- ```{r bar chart defect rate by measurement type speed and spin, echo = FALSE} -->
+
+<!-- renderPlot({ -->
+<!--     comp_summary_long <- comp_summary_long() -->
+
+
+<!--     comp_summary_long %>% filter( -->
+<!--     comp_summary_long$Measurement == "TM Port Speed" | comp_summary_long$Measurement == "TM Stad Speed" | comp_summary_long$Measurement ==  "Rap Speed" | comp_summary_long$Measurement ==  "TM Port Spin" |  comp_summary_long$Measurement ==  "TM Stad Spin" | comp_summary_long$Measurement ==  "Rap Spin" | comp_summary_long$Measurement == "HawkEye Speed" | comp_summary_long$Measurement == "HawkEye Spin") %>%  -->
+<!--     ggplot(., aes(x = Measurement, y = `Defect %`, label = round(`Defect %`, 2), fill = Device)) + -->
+<!--     geom_text(hjust = 0, vjust = 0) + -->
+<!--     geom_bar(stat = "identity") + -->
+<!--     labs(x = "Source and Measurement", title = "Defect % By Source and Measurement for Speed and Spin Metrics") + -->
+<!--     ylim(0,100) -->
+<!-- }) -->
+
+<!-- ``` -->
+
+
+<!-- ### Bar Chart of Defect Rate by Measurement Type for Trajectory Horizontal and Vertical Break -->
+
+<!-- ```{r bar chart defect rate by measurement type breaks, echo = FALSE} -->
+
+<!-- renderPlot({ -->
+<!--     comp_summary_long <- comp_summary_long() -->
+
+
+<!--     comp_summary_long %>% filter( -->
+<!--     comp_summary_long$Measurement == "TM Port TVB" | comp_summary_long$Measurement == "TM Stad TVB" | comp_summary_long$Measurement ==  "Rap TVB" | comp_summary_long$Measurement ==  "TM Port THB" | comp_summary_long$Measurement ==  "TM Stad THB" | comp_summary_long$Measurement ==  "Rap THB" | comp_summary_long$Measurement == "HawkEye TVB" | comp_summary_long$Measurement == "HawkEye THB") %>%  -->
+<!--     ggplot(., aes(x = Measurement, y = `Defect %`, label = round(`Defect %`, 2), fill = Device)) + -->
+<!--     geom_bar(stat = "identity") + -->
+<!--     geom_text(hjust = 0, vjust = 0) + -->
+<!--     labs(x = "Source and Measurement", title = "Defect % By Source and Measurement for Trajectory Break Metrics") + -->
+<!--     ylim(0,100) -->
+<!-- }) -->
+
+<!-- ``` -->
+
+<!-- ### Bar Chart of Defect Rate by Measurement Type for Release Height, Side, and Extension -->
+
+<!-- ```{r bar chart defect rate by measurement type rel height side and ext, echo = FALSE} -->
+
+<!-- renderPlot({ -->
+<!--     comp_summary_long <- comp_summary_long() -->
+
+<!--     comp_summary_long %>% filter( -->
+<!--     comp_summary_long$Measurement == "TM Port Rel Height" | comp_summary_long$Measurement == "TM Stad Rel Height" | comp_summary_long$Measurement ==  "Rap Rel Height" | comp_summary_long$Measurement ==  "TM Port Rel Side" | comp_summary_long$Measurement ==  "TM Stad Rel Side" | comp_summary_long$Measurement ==  "Rap Rel Side" | comp_summary_long$Measurement == "HawkEye Rel Side" | comp_summary_long$Measurement == "HawkEye Rel Height" | comp_summary_long$Measurement == "TM Stad Rel Extension" | comp_summary_long$Measurement == "TM Port Rel Extension" | comp_summary_long$Measurement == "Rap Rel Extension" | comp_summary_long$Measurement == "HawkEye Rel Extension") %>%  -->
+<!--     ggplot(., aes(x = Measurement, y = `Defect %`, label = round(`Defect %`, 2), fill = Device)) + -->
+<!--     geom_bar(stat = "identity") + -->
+<!--     geom_text(hjust = 0, vjust = 0) + -->
+<!--     labs(x = "Source and Measurement", title = "Defect % By Source and Measurement for Release Height, Side, and Extension Metrics") + -->
+<!--     ylim(0,100) -->
+<!-- }) -->
+
+<!-- ``` -->
+
+<!-- ### Bar Chart of Defect Rate by Measurement Type for x0, y0, and z0 Position -->
+
+<!-- ```{r bar chart defect rate by measurement type x y and z pos, echo = FALSE} -->
+
+<!-- renderPlot({ -->
+<!--     comp_summary_long <- comp_summary_long() -->
+
+<!--     comp_summary_long %>% filter( -->
+<!--     comp_summary_long$Measurement == "TM Port x0" | comp_summary_long$Measurement == "TM Stad x0" | comp_summary_long$Measurement ==  "Rap x0" | comp_summary_long$Measurement ==  "TM Port y0" | comp_summary_long$Measurement ==  "TM Stad y0" | comp_summary_long$Measurement ==  "Rap y0" | comp_summary_long$Measurement == "HawkEye x0" | comp_summary_long$Measurement == "HawkEye y0" | comp_summary_long$Measurement == "TM Stad z0" | comp_summary_long$Measurement == "TM Port z0" | comp_summary_long$Measurement == "Rap z0" | comp_summary_long$Measurement == "HawkEye z0") %>%  -->
+<!--     ggplot(., aes(x = Measurement, y = `Defect %`, label = round(`Defect %`, 2), fill = Device)) + -->
+<!--     geom_bar(stat = "identity") + -->
+<!--     geom_text(hjust = 0, vjust = 0) + -->
+<!--     labs(x = "Source and Measurement", title = "Defect % By Source and Measurement for x0, y0, and z0 Position Metrics") + -->
+<!--     ylim(0,100) -->
+<!-- }) -->
+
+<!-- ``` -->
+
+<!-- Column {data-width=500} -->
+<!-- ------------------------------------------------- -->
+
+<!-- ### Bar Chart of Defect Rate by Measurement Type for Strike Zone Side (X-Location) and Height (Y-Location) -->
+
+<!-- ```{r bar chart defect rate by measurement type szside and szheight, echo = FALSE} -->
+
+<!-- renderPlot({ -->
+<!--     comp_summary_long <- comp_summary_long() -->
+
+<!--     comp_summary_long %>% filter( -->
+<!--     comp_summary_long$Measurement == "TM Port SZ Side" | comp_summary_long$Measurement == "TM Stad SZ Side" | comp_summary_long$Measurement ==  "Rap SZ Side" | comp_summary_long$Measurement ==  "TM Port SZ Height" | comp_summary_long$Measurement ==  "TM Stad SZ Height" | comp_summary_long$Measurement ==  "Rap SZ Height" | comp_summary_long$Measurement == "HawkEye SZ Side" | comp_summary_long$Measurement == "HawkEye SZ Height") %>%  -->
+<!--     ggplot(., aes(x = Measurement, y = `Defect %`, label = round(`Defect %`, 2), fill = Device)) + -->
+<!--     geom_bar(stat = "identity") + -->
+<!--     geom_text(hjust = 0, vjust = 0) + -->
+<!--     labs(x = "Source and Measurement", title = "Defect % By Source and Measurement for SZ Side (X) and Height (Y) Metrics") + -->
+<!--     ylim(0,100) -->
+<!-- }) -->
+
+<!-- ``` -->
+
+
+
+
+<!-- ### Bar Chart of Defect Rate by Measurement Type for Spin X, Spin Y, and Spin Z -->
+
+<!-- ```{r bar chart defect rate by measurement type spinx spiny and spinz, echo = FALSE} -->
+
+<!-- renderPlot({ -->
+<!--     comp_summary_long <- comp_summary_long() -->
+
+<!--     comp_summary_long %>% filter( -->
+<!--     comp_summary_long$Measurement == "TM Port Spin X" | comp_summary_long$Measurement == "TM Stad Spin X" | comp_summary_long$Measurement ==  "Rap Spin X" | comp_summary_long$Measurement ==  "TM Port Spin Y" | comp_summary_long$Measurement ==  "TM Stad Spin Y" | comp_summary_long$Measurement ==  "Rap Spin Y" | comp_summary_long$Measurement == "HawkEye Spin X" | comp_summary_long$Measurement == "HawkEye Spin Y" | comp_summary_long$Measurement == "TM Stad Spin Z" | comp_summary_long$Measurement == "TM Port Spin Z" | comp_summary_long$Measurement == "Rap Spin Z" | comp_summary_long$Measurement == "HawkEye Spin Z") %>%  -->
+<!--     ggplot(., aes(x = Measurement, y = `Defect %`, label = round(`Defect %`, 2), fill = Device)) + -->
+<!--     geom_bar(stat = "identity") + -->
+<!--     geom_text(hjust = 0, vjust = 0) + -->
+<!--     labs(x = "Source and Measurement", title = "Defect % By Source and Measurement for Spin X, Spin Y, and Spin Z Metrics") + -->
+<!--     ylim(0,100) -->
+<!-- }) -->
+
+<!-- ``` -->
+
+<!-- ### Bar Chart of Defect Rate by Measurement Type for x0, y0, and z0 Velocity -->
+
+<!-- ```{r bar chart defect rate by measurement type x y and z velo, echo = FALSE} -->
+
+<!-- renderPlot({ -->
+<!--     comp_summary_long <- comp_summary_long() -->
+
+<!--     comp_summary_long %>% filter( -->
+<!--     comp_summary_long$Measurement == "TM Port vx0" | comp_summary_long$Measurement == "TM Stad vx0" | comp_summary_long$Measurement ==  "Rap vx0" | comp_summary_long$Measurement ==  "TM Port vy0" | comp_summary_long$Measurement ==  "TM Stad vy0" | comp_summary_long$Measurement ==  "Rap vy0" | comp_summary_long$Measurement == "HawkEye vx0" | comp_summary_long$Measurement == "HawkEye vy0" | comp_summary_long$Measurement == "TM Stad vz0" | comp_summary_long$Measurement == "TM Port vz0" | comp_summary_long$Measurement == "Rap vz0" | comp_summary_long$Measurement == "HawkEye vz0") %>%  -->
+<!--     ggplot(., aes(x = Measurement, y = `Defect %`, label = round(`Defect %`, 2), fill = Device)) + -->
+<!--     geom_bar(stat = "identity") + -->
+<!--     geom_text(hjust = 0, vjust = 0) + -->
+<!--     labs(x = "Source and Measurement", title = "Defect % By Source and Measurement for x0, y0, and z0 Velocity Metrics") + -->
+<!--     ylim(0,100) -->
+<!-- }) -->
+
+<!-- ``` -->
+
+<!-- ### Bar Chart of Defect Rate by Measurement Type for x0, y0, and z0 Acceleration -->
+
+<!-- ```{r bar chart defect rate by measurement type x y and z accel, echo = FALSE} -->
+
+<!-- renderPlot({ -->
+<!--     comp_summary_long <- comp_summary_long() -->
+
+<!--     comp_summary_long %>% filter( -->
+<!--     comp_summary_long$Measurement == "TM Port ax0" | comp_summary_long$Measurement == "TM Stad ax0" | comp_summary_long$Measurement ==  "Rap ax0" | comp_summary_long$Measurement ==  "TM Port ay0" | comp_summary_long$Measurement ==  "TM Stad ay0" | comp_summary_long$Measurement ==  "Rap ay0" | comp_summary_long$Measurement == "HawkEye ax0" | comp_summary_long$Measurement == "HawkEye ay0" | comp_summary_long$Measurement == "TM Stad az0" | comp_summary_long$Measurement == "TM Port az0" | comp_summary_long$Measurement == "Rap az0" | comp_summary_long$Measurement == "HawkEye az0") %>%  -->
+<!--     ggplot(., aes(x = Measurement, y = `Defect %`, label = round(`Defect %`, 2), fill = Device)) + -->
+<!--     geom_bar(stat = "identity") + -->
+<!--     geom_text(hjust = 0, vjust = 0) + -->
+<!--     labs(x = "Source and Measurement", title = "Defect % By Source and Measurement for x0, y0, and z0 Acceleration Metrics") + -->
+<!--     ylim(0,100) -->
+<!-- }) -->
+
+<!-- ``` -->
+
+
+
+<!-- ### Bar Chart of Defect Rate by Measurement Type for Hit Exit Velocity, Angle, and Direction -->
+
+<!-- ```{r bar chart defect rate by measurement type hit velo angle and dir, echo = FALSE} -->
+
+<!-- renderPlot({ -->
+<!--     comp_summary_long <- comp_summary_long() -->
+
+<!--     comp_summary_long %>% filter( -->
+<!--     comp_summary_long$Measurement == "TM Port Hit Velo" | comp_summary_long$Measurement == "TM Stad Hit Velo" | comp_summary_long$Measurement ==  "Rap Hit Velo" | comp_summary_long$Measurement ==  "TM Port Hit Angle" | comp_summary_long$Measurement ==  "TM Stad Hit Angle" | comp_summary_long$Measurement ==  "Rap Hit Angle" | comp_summary_long$Measurement == "HawkEye Hit Velo" | comp_summary_long$Measurement == "HawkEye Hit Angle" | comp_summary_long$Measurement == "TM Stad Hit Direction" | comp_summary_long$Measurement == "TM Port Hit Direction" | comp_summary_long$Measurement == "Rap Hit Direction" | comp_summary_long$Measurement == "HawkEye Hit Direction") %>%  -->
+<!--     ggplot(., aes(x = Measurement, y = `Defect %`, label = round(`Defect %`, 2), fill = Device)) + -->
+<!--     geom_bar(stat = "identity") + -->
+<!--     geom_text(hjust = 0, vjust = 0) + -->
+<!--     labs(x = "Source and Measurement", title = "Defect % By Source and Measurement for Hit Exit Velocity, Angle, and Direction Metrics") + -->
+<!--     ylim(0,100) -->
+<!-- }) -->
+
+<!-- ``` -->
+
+
+<!-- ### the following code generates summary statistics tables by re-printing exact values from CSV, the above code (not commented out) manually generates summary statistics tables -- to enable these to generate, uncomment by highlighting all code and hitting (ctrl + shift+ c) or (command + shift + c)
+
+Manually Calculated Avgs and Devect Values {data-navmenu="Summary Tables"}
+==================================
+
+Column{data-width=1000}
+-------------------------------------------------
+
+```{r reactive sumtable data}
+comp_data_table <- reactive({
+    comp_data <- comp_data()
+    
+    if ("TM.UTCDateTime" %in% colnames(comp_data)) {comp_data_table <- comp_data %>% mutate(Comp.PitchTimeStamp = substr(TM.UTCDateTime, 1, 19),
+    Comp.RelSpeed = (TM.RelSpeed),
+    Comp.SpinRate = (TM.SpinRate),
+    Comp.InducedVertBreak = (TM.InducedVertBreak),
+    Comp.HorzBreak = (TM.HorzBreak),
+    Comp.SZSide = (TM.SZone.Side),
+    Comp.SZHeight = (TM.SZone.Height),
+    Comp.ExitSpeed = (TM.ExitSpeed),
+    Comp.Angle = (TM.Angle),
+    Comp.Direction = (TM.Direction),
+    Comp.SpinTilt = TM.Spin.Tilt,
+    Comp.SpinX = (TM.Spin.X),
+    Comp.SpinY = (TM.Spin.Y),
+    Comp.SpinZ = (TM.Spin.Z),
+    Comp.RelHeight = (TM.ReleaseHeight),
+    Comp.RelExt = (TM.ReleaseExtension),
+    Comp.RelSide = (TM.ReleaseSide),
+    Comp.x0 = (TM.x0),
+    Comp.y0 = (TM.y0),
+    Comp.z0 = (TM.z0),
+    Comp.vx0 = (TM.vx0),
+    Comp.vy0 = (TM.vy0),
+    Comp.vz0 = (TM.vz0),
+    Comp.ax0 = (TM.ax0),
+    Comp.ay0 = (TM.ay0),
+    Comp.az0 = (TM.az0))
+}
+
+if("TM.Local.DateTime" %in% colnames(comp_data)) {comp_data_table <- comp_data %>% mutate(
+    Comp.RelSpeed = TM.RelSpeed,
+    Comp.SpinRate = (TM.SpinRate),
+    Comp.InducedVertBreak = (TM.InducedVertBreak),
+    Comp.HorzBreak = (TM.HorzBreak),
+    Comp.ExitSpeed = (TM.ExitSpeed),
+    Comp.SZSide = (TM.SZone.Side),
+    Comp.SZHeight = (TM.SZone.Height),
+    Comp.Angle = (TM.Angle),
+    Comp.Direction = (TM.Direction),
+    Comp.SpinTilt = TM.Spin.Tilt,
+    Comp.SpinX = (TM.Spin.X),
+    Comp.SpinY = (TM.Spin.Y),
+    Comp.SpinZ = (TM.Spin.Z),
+    Comp.RelHeight = (TM.ReleaseHeight),
+    Comp.RelExt = (TM.ReleaseExtension),
+    Comp.RelSide = (TM.ReleaseSide),
+    Comp.x0 = (TM.x0),
+    Comp.y0 = (TM.y0),
+    Comp.z0 = (TM.z0),
+    Comp.vx0 = (TM.vx0),
+    Comp.vy0 = (TM.vy0),
+    Comp.vz0 = (TM.vz0),
+    Comp.ax0 = (TM.ax0),
+    Comp.ay0 = (TM.ay0),
+    Comp.az0 = (TM.az0))
+}
+
+if("Hawk.Eye.Local.DateTime" %in% colnames(comp_data)) {comp_data_table <- comp_data %>% mutate(
+    Comp.RelSpeed = Hawk.Eye.RelSpeed,
+    Comp.SpinRate = (Hawk.Eye.SpinRate),
+    Comp.InducedVertBreak = (Hawk.Eye.InducedVertBreak),
+    Comp.HorzBreak = (Hawk.Eye.HorzBreak),
+    Comp.ExitSpeed = (Hawk.Eye.ExitSpeed),
+    Comp.SZSide = (Hawk.Eye.SZone.Side),
+    Comp.SZHeight = (Hawk.Eye.SZone.Height),
+    Comp.Angle = (Hawk.Eye.Angle),
+    Comp.Direction = (Hawk.Eye.Direction),
+    Comp.SpinTilt = Hawk.Eye.Spin.Tilt,
+    Comp.SpinX = (Hawk.Eye.Spin.X),
+    Comp.SpinY = (Hawk.Eye.Spin.Y),
+    Comp.SpinZ = (Hawk.Eye.Spin.Z),
+    Comp.RelHeight = (Hawk.Eye.ReleaseHeight),
+    Comp.RelExt = (Hawk.Eye.ReleaseExtension),
+    Comp.RelSide = (Hawk.Eye.ReleaseSide),
+    Comp.x0 = (Hawk.Eye.x0),
+    Comp.y0 = (Hawk.Eye.y0),
+    Comp.z0 = (Hawk.Eye.z0),
+    Comp.vx0 = (Hawk.Eye.vx0),
+    Comp.vy0 = (Hawk.Eye.vy0),
+    Comp.vz0 = (Hawk.Eye.vz0),
+    Comp.ax0 = (Hawk.Eye.ax0),
+    Comp.ay0 = (Hawk.Eye.ay0),
+    Comp.az0 = (Hawk.Eye.az0))
+}
+})
+
+```
+
+<!-- ### Pitch Metric Summary Table: Spin and Speed Averages and Defects -->
+
+<!-- ```{r pitch metric spin and speed avg and defect summary table} -->
+
+<!-- renderTable({ -->
+<!--      comp_data_table <- comp_data_table() -->
+
+<!--     comp_data_table %>% select(PitchNo, Comp.RelSpeed, Rap.TotalSpeed..mph., Speed.Delta, Comp.SpinRate, Rap.TotalSpin, Spin.Delta) %>% tail(6) %>% rename(Measurement = PitchNo, `Comp Speed (mph)` = Comp.RelSpeed, `Rap Speed (mph)` = Rap.TotalSpeed..mph., `Speed Delta` = Speed.Delta, `Comp Spin (rpm)` = Comp.SpinRate, `Rap Spin (mph)` = Rap.TotalSpin, `Spin Delta` = Spin.Delta) -->
+<!-- }) -->
+<!-- ``` -->
+
+<!-- ### Pitch Metric Summary Table: Trajectory Horizontal and Vertical Break Averages and Defects -->
+
+
+<!-- ```{r pitch metric break avg and defect summary table} -->
+
+<!-- renderTable({ -->
+<!--     comp_data_table <- comp_data_table() -->
+
+<!--     comp_data_table %>% select(PitchNo, Comp.InducedVertBreak, Rap.VertBreakTrajectory, VB.Delta, Comp.HorzBreak, Rap.HorzBreakTrajectory, HB.Delta) %>% tail(6) %>% rename(Measurement = PitchNo, `Comp Trajectory VB` =  Comp.InducedVertBreak,  `Rap Trajectory VB` = Rap.VertBreakTrajectory, `VB Delta` = VB.Delta, `Comp Trajectory HB` = Comp.HorzBreak, `Rap Trajectory HB` = Rap.HorzBreakTrajectory, `HB Delta` = HB.Delta) -->
+<!-- }) -->
+<!-- ``` -->
+
+<!-- ### Pitch Metric Summary Table: SZ Side (X-Location) and Height (Y-Location) Averages and Defects -->
+
+<!-- ```{r pitch metric szsidehieght avg and defect summary table} -->
+<!-- renderTable({ -->
+<!--     comp_data_table <- comp_data_table() -->
+
+<!--     comp_data_table %>% select(PitchNo, Comp.SZSide, Rap.SZone.Side, SZoneX.Delta, Comp.SZHeight, Rap.SZone.Height, SZoneY.Delta) %>% tail(6) %>% rename(Measurement = PitchNo, `Comp SZ Side` =  Comp.SZSide,  `Rap SZ Side` = Rap.SZone.Side, `SZ Side Delta` = SZoneX.Delta, `Comp SZ Height` = Comp.SZHeight, `Rap SZ Height` = Rap.SZone.Height, `SZ Height Delta` = SZoneY.Delta) -->
+<!-- }) -->
+<!-- ``` -->
+
+<!-- ### Pitch Metric Summary Table: Release Height, Side, and Extension -->
+
+<!-- ```{r relhiehgt side and ext avg and defect summary table} -->
+<!-- renderTable({ -->
+<!--     comp_data_table <- comp_data_table() -->
+
+<!--     comp_data_table %>% select(PitchNo, Comp.RelHeight, Rap.ReleaseHeight, ReleaseHeight.Delta, Comp.RelSide, Rap.ReleaseSide, ReleaseSide.Delta, Comp.RelExt, Rap.ReleaseExtension, ReleaseExtension.Delta) %>% tail(6) %>% rename(Measurement = PitchNo, `Comp Rel Height` = Comp.RelHeight, `Rap Rel Height` = Rap.ReleaseHeight, `Rel Height Delta` = ReleaseHeight.Delta, `Comp Rel Side` = Comp.RelSide, `Rap Rel Side` = Rap.ReleaseSide, `Rel Side Delta` = ReleaseSide.Delta, `Comp Rel Extension` = Comp.RelExt, `Rap Rel Extension` = Rap.ReleaseExtension, `Rel Ext Delta` = ReleaseExtension.Delta) -->
+<!-- }) -->
+<!-- ``` -->
+
+<!-- ### Pitch Metric Summary Table: Spin X, Spin Y, and Spin Z -->
+
+<!-- ```{r spin x y and z avg and defect summary table} -->
+<!-- renderTable({ -->
+<!--     comp_data_table <- comp_data_table() -->
+
+<!--     comp_data_table %>% select(PitchNo, Comp.SpinX, Rap.Spin.X, Spin.X.Delta, Comp.SpinY, Rap.Spin.Y, Spin.Y.Delta, Comp.SpinZ, Rap.Spin.Z, Spin.Z.Delta) %>% tail(6) %>% rename(Measurement = PitchNo, `Comp Spin X` = Comp.SpinX, `Rap Spin X` = Rap.Spin.X, `Spin X Delta` = Spin.X.Delta, `Comp Spin Y` = Comp.SpinY, `Rap Spin Y` = Rap.Spin.Y, `Spin Y Delta` = Spin.Y.Delta, `Comp Spin Z` = Comp.SpinZ, `Rap Spin Z` = Rap.Spin.Z, `Spin Z Delta` = Spin.Z.Delta) -->
+<!-- }) -->
+<!-- ``` -->
+
+<!-- ### Pitch Metric Summary Table: x0, y0, and z0 -->
+
+<!-- ```{r x0 y0 and z0 avg and defect summary table} -->
+<!-- renderTable({ -->
+<!--     comp_data_table <- comp_data_table() -->
+
+<!--     comp_data_table %>% select(PitchNo, Comp.x0, Rap.x0, x0.Delta, Comp.y0, Rap.y0, y0.Delta, Comp.z0, Rap.z0, z0.Delta) %>% tail(6) %>% rename(Measurement = PitchNo, `Comp x0` = Comp.x0, `Rap x0` = Rap.x0, `x0 Delta` = x0.Delta, `Comp y0` = Comp.y0, `Rap y0` = Rap.y0, `y0 Delta` = y0.Delta, `Comp z0` = Comp.z0, `Rap z0` = Rap.z0, `z0 Delta` = z0.Delta) -->
+<!-- }) -->
+<!-- ``` -->
+
+<!-- ### Pitch Metric Summary Table: Vx0, Vy0, and Vz0 -->
+
+<!-- ```{r vx0 vy0 and vz0 avg and defect summary table} -->
+<!-- renderTable({ -->
+<!--     comp_data_table <- comp_data_table() -->
+
+<!--     comp_data_table %>% select(PitchNo, Comp.vx0, Rap.vx0, vx0.Delta, Comp.vy0, Rap.vy0, vy0.Delta, Comp.vz0, Rap.vz0, vz0.Delta) %>% tail(6) %>% rename(Measurement = PitchNo, `Comp Vx0` = Comp.vx0, `Rap Vx0` = Rap.vx0, `Vx0 Delta` = vx0.Delta, `Comp Vy0` = Comp.vy0, `Rap Vy0` = Rap.vy0, `Vy0 Delta` = vy0.Delta, `Comp Vz0` = Comp.vz0, `Rap Vz0` = Rap.vz0, `Vz0 Delta` = vz0.Delta) -->
+<!-- }) -->
+<!-- ``` -->
+
+<!-- ### Pitch Metric Summary Table: Ax0, Ay0, and Az0 -->
+
+<!-- ```{r ax0 ay0 and az0 avg and defect summary table} -->
+<!-- renderTable({ -->
+<!--     comp_data_table <- comp_data_table() -->
+
+<!--     comp_data_table %>% select(PitchNo, Comp.ax0, Rap.ax0, ax0.Delta, Comp.ay0, Rap.ay0, ay0.Delta, Comp.az0, Rap.az0, az0.Delta) %>% tail(6) %>% rename(Measurement = PitchNo, `Comp Ax0` = Comp.ax0, `Rap Ax0` = Rap.ax0, `Ax0 Delta` = ax0.Delta, `Comp Ay0` = Comp.ay0, `Rap Ay0` = Rap.ay0, `Ay0 Delta` = ay0.Delta, `Comp Az0` = Comp.az0, `Rap Az0` = Rap.az0, `Az0 Delta` = az0.Delta) -->
+<!-- }) -->
+<!-- ``` -->
+
+
+<!-- ### Hit Metric Summary Table: Averages and Defects -->
+
+<!-- ```{r hit metric avg and defect summary table} -->
+
+<!-- renderTable({ -->
+<!--     comp_data_table <- comp_data_table() -->
+
+<!--     comp_data_table %>% select(PitchNo, Comp.ExitSpeed, Rap.HitVelocity, ExitSpeed.Delta, Comp.Angle, Rap.HitVertAngle, ExitAngle.Delta, Comp.Direction, Rap.Direction, ExitDirection.Delta) %>% tail(6) %>% rename(Measurement = PitchNo, `Comp Hit Exit Velo` = Comp.ExitSpeed, `Rap Hit Exit Velo` = Rap.HitVelocity, `Hit Exit Velo Delta` = ExitSpeed.Delta, `Comp Hit Angle` = Comp.Angle, `Rap Hit Angle` = Rap.HitVertAngle, `Hit Angle Delta` = ExitAngle.Delta, `Comp Hit Direction` = Comp.Direction, `Rap Hit Direction` = Rap.Direction, `Hit Direction Delta` = ExitDirection.Delta) -->
+<!-- }) -->
+<!-- ``` -->
+
+
