@@ -1,0 +1,169 @@
+---
+title: "JPTablesandFigures"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readr)
+library(dplyr)
+library(knitr)
+library(tinytex)
+library(ggplot2)
+library(kableExtra)
+library(janitor)
+library(stringr)
+library(forcats)
+library(lubridate)
+library(gridExtra)
+library(foreign)
+library(haven)
+library(stargazer)
+library(arsenal)
+library(performance) # for diagnistics test
+library(see) # for diagnistics test
+library(qqplotr) # for diagnistics test
+library(sjPlot)
+library(xtable)
+library(interactions)
+library(ggeffects)
+library(scales)
+library(MatchIt)
+library(MASS)
+library(janitor)
+suppressMessages(library(tidyverse))
+library(naniar)
+library(cowplot)
+
+```
+
+```{r summary stats, results = 'asis', echo = FALSE}
+
+kuhlman_finaldata <- read_csv("kuhlman_finaldata.csv")
+
+var.names <- list(
+    AnyInternal = "Internal Conflict",
+    totalgold = "Number Gold Medals Won",
+    gdp_percap = "GDP Per Capita",
+    pop.y = "Country Population (in Millions)"
+)
+
+kuhlman_finaldata <- kuhlman_finaldata %>% distinct(ctryname, year, .keep_all = TRUE)
+
+summary_stats <- arsenal::tableby(AnyInternal~totalgold + gdp_percap + pop.y,
+                                  data = kuhlman_finaldata,
+                                  numeric.stats = c("N", "mean", "sd", "median", "q1q3"),
+                                  #weights = cbps_weights,
+                                  test = FALSE) %>%
+    summary(labelTranslations = var.names, title = "Brief Summary Statistics by Internal Conflict Presence (1) or Absence (0)")
+summary_stats
+
+```
+
+```{r country year stats, results = 'asis', echo = FALSE}
+
+var_names2 <- list(
+    un_continent_name = "Continent",
+    totalgold = "Number Gold Medals Won",
+    gdp_percap ="GDP Per Capita (USD)", 
+    pop.y = "Population"
+    )
+
+summary_stats2 <- arsenal::tableby(un_continent_name.x~totalgold + gdp_percap +
+                              pop.y, numeric.stats = c("N", "mean", "sd", "median", "q1q3"), data = kuhlman_finaldata, test=FALSE) %>% summary(labelTranslations = var_names2, title = "Regional Summary Stats")
+
+summary_stats2
+```
+
+```{r summary hist, echo = FALSE}
+
+ggplot(kuhlman_finaldata) + 
+    geom_histogram(aes(x=totalgold, y=..density.., fill=as.factor(AnyInternal)),
+                   alpha = 0.5, position = "identity") + 
+    labs(x="Total Gold Medals Won", y = "Density",
+         title = "Figure 1: Histogram of Total Gold Medals Won by Presence of Internal Conflict",
+         fill = "Internal Conflict") + theme(plot.title = element_text(size=10))
+
+```
+
+```{r complex summary barplot, echo = FALSE}
+
+# looking at totalgold column
+table(kuhlman_finaldata$totalgold)
+kuhlman_finaldata <- kuhlman_finaldata %>% 
+    mutate(totalgold_grouped = case_when(
+        (is.na(totalgold))~"No Olympics",
+        (totalgold==0)~"0",
+        (totalgold<=5)~"1-5",
+        (totalgold<=10)~">6"
+    ),
+    dem_fct = as.factor(democracy.x),
+    host_fct = as.factor(hostnation))
+
+
+summary.df <- kuhlman_finaldata %>%
+    dplyr::select(totalgold_grouped, AnyInternal)
+
+totalgold <- c("No Olympics", "0", "1-5", ">6")
+
+# calculating proportions for new dataframe for chart
+conflictproportion <- c(sum(kuhlman_finaldata$AnyInternal[kuhlman_finaldata$totalgold_grouped == "No Olympics"], na.rm = TRUE)/sum(kuhlman_finaldata$totalgold_grouped == "No Olympics", na.rm=TRUE), sum(kuhlman_finaldata$AnyInternal[kuhlman_finaldata$totalgold_grouped == "0"], na.rm = TRUE)/sum(kuhlman_finaldata$totalgold_grouped == "0", na.rm=TRUE), sum(kuhlman_finaldata$AnyInternal[kuhlman_finaldata$totalgold_grouped == "1-5"], na.rm = TRUE)/sum(kuhlman_finaldata$totalgold_grouped == "1-5", na.rm=TRUE), sum(kuhlman_finaldata$AnyInternal[kuhlman_finaldata$totalgold_grouped == ">6"], na.rm = TRUE)/sum(kuhlman_finaldata$totalgold_grouped == ">6", na.rm=TRUE))
+
+totals <- c(sum(kuhlman_finaldata$totalgold_grouped == "No Olympics", na.rm=TRUE),
+            sum(kuhlman_finaldata$totalgold_grouped == "0", na.rm=TRUE),
+            sum(kuhlman_finaldata$totalgold_grouped == "1-5", na.rm=TRUE),
+            sum(kuhlman_finaldata$totalgold_grouped == ">6", na.rm=TRUE)
+            )
+
+ 
+summary.df_proportions <- data.frame(
+    totalgold, conflictproportion, totals
+)
+
+summary.df_proportions$totalgold <- factor(summary.df_proportions$totalgold,
+                         levels = c("No Olympics", "0", "1-5", ">6"))
+
+ggplot(summary.df_proportions, aes(x = totalgold, y = conflictproportion, fill = totalgold)) +
+    geom_bar(stat="identity") +
+    labs(x = "Number Gold Medals Won", y = "Proportion of Internal Conflict",
+         title="Figure 2: Internal Conflict Presence by Gold Medals Won for Each Country-Year, with # Observations", fill = "Number Gold Medals Won") +
+     theme(plot.title = element_text(size=8)) +
+    geom_text(aes(label=totals))
+
+
+```
+
+```{r creating models on unlagged data, echo = FALSE}
+reglm1 <- glm(AnyInternal~totalgold, data = kuhlman_finaldata, family = binomial)
+reglm2 <- glm(AnyInternal~totalgold + gdp_percap + pop.y, data = kuhlman_finaldata, family=binomial)
+reglm3 <- glm(AnyInternal~totalgold + gdp_percap + pop.y +
+                 host_fct + dem_fct + un_continent_name.x, data = kuhlman_finaldata, family = binomial)
+
+
+```
+
+```{r regression table of unlagged, results = 'asis', echo = FALSE}
+reg.table <- stargazer(reglm1, reglm2, reglm3, header = FALSE, type = "latex", title = "Effect of Gold Medal Winning in Olympics on Internal Conflict in Same Year", column.labels = c("Model 1", "Model 2", "Model 3"),
+                       covariate.labels = c("Total Gold Medals Won", "GDP Per Capita(USD)","Population", "Is Host Country", "Is Democracy", "In Americas", "In Asia", "In Europe", "In Oceana")
+                       )
+
+```
+
+```{r plotting final model, results='asis', echo = FALSE}
+plot_model(reglm3, type = "pred",
+           terms = c("totalgold")) + 
+    labs(x = "Number Gold Medals Won", y = "Probability of Internal Conflict", title = "Figure 3: Predicted Probability of Internal Conflit by Gold Medal Count")
+
+
+```
+
+```{r country totals table A1, results = 'asis'}
+country_totals <- arsenal::tableby(~ctryname, data=kuhlman_finaldata,
+                                   numeric.stars = c("N")) %>%
+    summary()
+country_totals
+
+```
+
